@@ -99,7 +99,8 @@ class LambadaTrain(Dataset):
 
         if rebuild:
             self.docs = []
-            os.remove(self.corpus_path / "build_docs.p")
+            if os.path.exists(self.corpus_path / "build_docs.p"):
+                os.remove(self.corpus_path / "build_docs.p")
             for subdir in os.listdir(self.corpus_path):
                 for files in os.listdir(self.corpus_path / subdir):
 

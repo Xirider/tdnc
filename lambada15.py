@@ -529,6 +529,10 @@ def main():
         load_weights_from_state(model.bert, bert_state_dict)
         load_weights_from_state(model.cls , cls_state_dict)
 
+        if not os.path.exists(_MODELS):
+            logger.info(f"Creating new dir: {_MODELS}")
+            os.makedirs(_MODELS)
+
         torch.save(model.state_dict(), _MODELS / "UTafterBertPretrained.pt")
 
 

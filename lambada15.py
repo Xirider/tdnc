@@ -553,8 +553,7 @@ def main():
         model = UTafterBert(config, config2)
 
     if args.model_type == "UTafterBertPretrained":
-        config = BertConfig(30522)
-        config2 = BertConfig(30522)
+
         model = UTafterBert(config, config2)
 
 
@@ -565,22 +564,31 @@ def main():
         
         for param in model.bert.parameters():
             param.requires_grad = False
+
+        
         # state = model.state_dict()
         # for name in state:
         #     print(name)
         #     print(state[name].mean())
 
-        embdict = model.bert.embeddings.state_dict()
-        print("embedding weights")
-        for a in embdict:
-            print(a)
-            print(embdict[a].mean())
+        # embdict = model.bert.embeddings.state_dict()
+        # print("embedding weights")
+        # for a in embdict:
+        #     print(a)
+        #     print(embdict[a].mean())
         
-        clsdict = model.cls.state_dict()
-        print("cls weights")
-        for a in clsdict:
-            print(a)
-            print(clsdict[a].mean())
+        # clsdict = model.cls.state_dict()
+        # print("cls weights")
+        # for a in clsdict:
+        #     print(a)
+        #     print(clsdict[a].mean())
+
+        # utdict = model.ut.state_dict()
+        # print("cls weights")
+        # for a in utdict:
+        #     print(a)
+        #     print(utdict[a].mean())
+
 
 
     if args.fp16:
@@ -596,7 +604,12 @@ def main():
         model = torch.nn.DataParallel(model)
 
     # Prepare optimizer
-    param_optimizer = list(model.named_parameters())
+    if args.model_type == "UTafterBertPretrained":
+        param_optimizer = list(model.ut.named_parameters())
+        print("updating only ut part")
+    else:
+        param_optimizer = list(model.named_parameters())
+        print("updating all parameters")
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},

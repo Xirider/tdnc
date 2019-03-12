@@ -711,16 +711,17 @@ def main():
                     joinedrealwords = " ".join(realwords)
                     print(joinedrealwords)
 
-                    # accuracy
-                    with torch.no_grad():
+                                    # accuracy
+                with torch.no_grad():
 
-                        maxes = torch.argmax(predictions, 1)
-                        correct_number = (lm_label_ids == maxes).sum()
-                        correct_number = correct_number.item()
-                        totalmasks = (lm_label_ids > 0).sum()
-                        totalmasks = totalmasks.item()
+                    maxes = torch.argmax(predictions, 1)
+                    correct_number = (lm_label_ids == maxes).sum()
+                    correct_number = correct_number.item()
+                    totalmasks = (lm_label_ids > 0).sum()
+                    totalmasks = totalmasks.item()
 
-                        experiment.log_metric("accuracy", correct_number / totalmasks , step = step)
+                    experiment.log_metric("accuracy", correct_number / totalmasks , step = step)
+
 
                 nb_tr_examples += input_ids.size(0)
                 nb_tr_steps += 1

@@ -1,6 +1,8 @@
 # coding=utf-8
-
 from __future__ import absolute_import, division, print_function, unicode_literals
+
+from comet_ml import Experiment
+
 
 import argparse
 import logging
@@ -24,6 +26,9 @@ import random
 
 import tarfile
 import requests
+
+experiment = Experiment(api_key="zMVSRiUzF89hdX5u7uWrSW5og",
+                        project_name="tdnc", workspace="xirider")
 
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -460,7 +465,9 @@ def main():
     args = parser.parse_args()
 
 
+    hyperparams = args.__dict__
 
+    experiment.log_parameters(hyperparams)
 
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -680,8 +687,9 @@ def main():
                 else:
                     loss.backward()
                 print(f"Step {step} loss: {loss.item()} ")
+                experiment.log_metric("loss", loss.item(), step = step)
                 tr_loss += loss.item()
-
+                
 
                 if step % args.inter_results == 0:
 
@@ -702,6 +710,9 @@ def main():
                     print("Predicted words:")
                     joinedrealwords = " ".join(realwords)
                     print(joinedrealwords)
+
+                    # with torch.no_grad():
+                    #     maxes = torch.argmax(predictions, 2)
                 
 
                 nb_tr_examples += input_ids.size(0)
@@ -711,11 +722,14 @@ def main():
                         # modify learning rate with special warm up BERT uses
                         # if args.fp16 is False, BertAdam is used that handles this automatically
                         lr_this_step = args.learning_rate * warmup_linear(global_step/num_train_optimization_steps, args.warmup_proportion)
+                        hyperparams["learning_rate"] = lr_this_step
                         for param_group in optimizer.param_groups:
                             param_group['lr'] = lr_this_step
                     optimizer.step()
                     optimizer.zero_grad()
                     global_step += 1
+                
+
 
         # Save a trained model
         logger.info("** ** * Saving fine - tuned model ** ** * ")

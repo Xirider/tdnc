@@ -118,7 +118,7 @@ class LambadaTest(Dataset):
 
 
         # transform sample to features
-        cur_features = convert_example_to_features(tokens_a, self.sample_counter, self.seq_len, self.tokenizer)
+        cur_features = convert_example_to_features_test(tokens_a, self.sample_counter, self.seq_len, self.tokenizer)
 
         cur_tensors = (torch.tensor(cur_features.input_ids),
                        torch.tensor(cur_features.input_mask),
@@ -166,7 +166,7 @@ class InputFeatures(object):
 
 
 
-def convert_example_to_features(example, cur_time, max_seq_length, tokenizer):
+def convert_example_to_features_test(example, cur_time, max_seq_length, tokenizer):
     """
     Convert a raw sample (pair of sentences as tokenized strings) into a proper training sample with
     IDs, LM labels, input_mask, CLS and SEP tokens etc.
@@ -183,7 +183,7 @@ def convert_example_to_features(example, cur_time, max_seq_length, tokenizer):
 
 
 
-    tokens_a = truncate_seq_pair(tokens_a, max_seq_length - 3)
+    tokens_a = truncate_seq_pair_test(tokens_a, max_seq_length - 3)
 
 
 
@@ -299,7 +299,7 @@ def convert_example_to_features(example, cur_time, max_seq_length, tokenizer):
     return features
 
 
-def truncate_seq_pair(tokens_a, max_length):
+def truncate_seq_pair_test(tokens_a, max_length):
     """Truncates a sequence pair in place to the maximum length."""
 
     # This is a simple heuristic which will always truncate the longer sequence

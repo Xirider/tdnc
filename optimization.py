@@ -59,6 +59,7 @@ class BertAdam(Optimizer):
     def __init__(self, params, lr=required, warmup=-1, t_total=-1, schedule='warmup_linear',
                  b1=0.9, b2=0.999, e=1e-6, weight_decay=0.01,
                  max_grad_norm=1.0):
+        self.current_lr = lr
         if lr is not required and lr < 0.0:
             raise ValueError("Invalid learning rate: {} - should be >= 0.0".format(lr))
         if schedule not in SCHEDULES:
@@ -149,6 +150,7 @@ class BertAdam(Optimizer):
                 else:
                     lr_scheduled = group['lr']
 
+                self.current_lr = lr_scheduled
                 update_with_lr = lr_scheduled * update
                 p.data.add_(-update_with_lr)
 

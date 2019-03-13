@@ -475,6 +475,9 @@ def main():
                 type=int,
                 default=4,
                 help="layers for ut model")
+    parser.add_argument("--load_model", default="", type=str, required=False,
+                    help="Load model in corresponding Model folder")
+    
 
     args = parser.parse_args()
 
@@ -593,6 +596,14 @@ def main():
         for param in model.bert.parameters():
             param.requires_grad = False
 
+    if args.load_model:
+        model.load_state_dict(torch.load(_MODELS / args.load_model / "pytorch_model.pt"))
+        model.train()
+
+        if args.model_type == "UTafterBertPretrained":
+            model.bert.eval()
+            model.ut.train()
+            model.cls.eval()
 
 
 
@@ -757,7 +768,6 @@ def main():
             torch.save(model.state_dict(), output_model_file)
             logger.info(f"Creating new dir and saving model in: {args.output_dir}")
 
-            torch.save(model.state_dict(), _MODELS / "UTafterBertPretrained.pt")
 
     if args.do_eval:  
 

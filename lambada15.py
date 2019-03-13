@@ -113,8 +113,8 @@ class LambadaTrain(Dataset):
             if os.path.exists(self.corpus_path / "build_docs.p"):
                 os.remove(self.corpus_path / "build_docs.p")
             for subdir in os.listdir(self.corpus_path):
+                print(subdir)
                 for files in os.listdir(self.corpus_path / subdir):
-
                     with open(self.corpus_path / subdir / files , "r", encoding=encoding) as f:
                         interdoc = ""
 

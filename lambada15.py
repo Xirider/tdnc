@@ -534,11 +534,6 @@ def main():
         torch.cuda.manual_seed_all(args.seed)
 
     
-    if os.path.exists(args.output_dir) and os.listdir(args.output_dir):
-        raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
-    if not os.path.exists(args.output_dir):
-        os.makedirs(args.output_dir)
-
 
     if args.copy_google_weights:
         inter_model = BertForMaskedLM.from_pretrained(args.bert_model)
@@ -596,7 +591,7 @@ def main():
         for param in model.bert.parameters():
             param.requires_grad = False
 
-    if args.load_model:
+    if args.load_model != "":
         model.load_state_dict(torch.load(_MODELS / args.load_model / "pytorch_model.pt"))
         model.train()
 
@@ -759,12 +754,13 @@ def main():
         # Save a trained model
         logger.info("** ** * Saving fine - tuned model ** ** * ")
 
-        output_model_file = os.path.join(_MODELS , args.output_dir, "pytorch_model.pt")
+
         if args.do_train:
             if not os.path.exists(_MODELS):
                 os.makedirs(_MODELS)
             if not os.path.exists(_MODELS/ args.output_dir):
                 os.makedirs( _MODELS / args.output_dir)
+            output_model_file = os.path.join(_MODELS , args.output_dir, "pytorch_model.pt")
             torch.save(model.state_dict(), output_model_file)
             logger.info(f"Creating new dir and saving model in: {args.output_dir}")
 

@@ -87,7 +87,7 @@ def _prepare_lambada_data(tmp_dir, data_dir):
 
 
 class LambadaTrain(Dataset):
-    def __init__(self, corpus_path, tokenizer, seq_len, encoding="utf-8", corpus_lines=None,  rebuild=True, creation_length =110):
+    def __init__(self, corpus_path, tokenizer, seq_len, encoding="utf-8", corpus_lines=None,  rebuild=True, creation_length =128, short_factor = 1):
         self.vocab = tokenizer.vocab
         self.tokenizer = tokenizer
         self.seq_len = seq_len
@@ -105,11 +105,13 @@ class LambadaTrain(Dataset):
         # for loading samples in memory
         self.current_random_doc = 0
         self.num_docs = 0
+        self.short_factor = short_factor
 
 
 
         if rebuild:
             self.docs = []
+            skipcounter = 0
             if os.path.exists(self.corpus_path / "build_docs.p"):
                 os.remove(self.corpus_path / "build_docs.p")
             for subdir in os.listdir(self.corpus_path):
@@ -119,13 +121,16 @@ class LambadaTrain(Dataset):
                         interdoc = ""
 
                         for line in tqdm(f, desc="Loading Dataset", total=corpus_lines):
+                            
 
                             interdoc += line
 
                             if len(interdoc.split()) >= self.creation_length:
-                                self.docs.append(interdoc)
-                                self.num_docs += 1
+                                if skipcounter % self.short_factor == 0:
+                                    self.docs.append(interdoc)
+                                    self.num_docs += 1
                                 interdoc = ""
+                                skipcounter += 1
                             
                 print("genre done")
             
@@ -408,7 +413,7 @@ def main():
                         action='store_true',
                         help="Whether to run training.")
     parser.add_argument("--train_batch_size",
-                        default=32,
+                        default=64,
                         type=int,
                         help="Total batch size for training.")
     parser.add_argument("--learning_rate",
@@ -416,7 +421,7 @@ def main():
                         type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--num_train_epochs",
-                        default=3.0,
+                        default=1.0,
                         type=float,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--warmup_proportion",
@@ -430,8 +435,8 @@ def main():
     parser.add_argument("--on_memory",
                         action='store_true',
                         help="Whether to load train samples into memory or use disk")
-    parser.add_argument("--do_lower_case",
-                        action='store_true',
+    parser.add_argument("--do_upper_case",
+                        action='store_false',
                         help="Whether to lower case the input text. True for uncased models, False for cased models.")
     parser.add_argument("--local_rank",
                         type=int,
@@ -457,6 +462,10 @@ def main():
                         type=int,
                         default=100,
                         help="how often to give the results")
+    parser.add_argument('--short_factor',
+                        type=int,
+                        default=1,
+                        help="divide training set length by factor")
     parser.add_argument("--download",
                     action='store_true',
                     help="Whether to download the data again")
@@ -501,7 +510,8 @@ def main():
     if args.download and args.do_train:
         filename = _prepare_lambada_data(_TMPDIR, _DATADIR)
 
-    tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
+    lower_case = not args.do_upper_case
+    tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case= lower_case)
 
     # first ist pretrained bert, second is ut following
     config = BertConfig(30522)
@@ -512,7 +522,7 @@ def main():
 
     if args.do_train:
 
-        train_dataset = LambadaTrain(_TRAINDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, creation_length= args.max_seq_length - 15)
+        train_dataset = LambadaTrain(_TRAINDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, creation_length= args.max_seq_length - 20, short_factor= args.short_factor)
     
         num_train_optimization_steps = int(
             len(train_dataset) / args.train_batch_size / args.gradient_accumulation_steps) * args.num_train_epochs

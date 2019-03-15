@@ -139,7 +139,10 @@ class BertConfig(object):
                  attention_probs_dropout_prob=0.1,
                  max_position_embeddings=512,
                  type_vocab_size=2,
-                 initializer_range=0.02):
+                 initializer_range=0.02,
+                 use_mask_embeddings=True,
+                 use_temporal_embeddings=True,
+                 mask_token_number = 103):
         """Constructs BertConfig.
 
         Args:
@@ -182,6 +185,9 @@ class BertConfig(object):
             self.max_position_embeddings = max_position_embeddings
             self.type_vocab_size = type_vocab_size
             self.initializer_range = initializer_range
+            self.use_mask_embeddings= use_mask_embeddings
+            self.use_temporal_embeddings= use_temporal_embeddings
+            self.mask_token_number = mask_token_number
         else:
             raise ValueError("First argument must be either a vocabulary size (int)"
                              "or the path to a pretrained model config file (str)")
@@ -231,6 +237,7 @@ class BertLayerNorm(nn.Module):
         s = (x - u).pow(2).mean(-1, keepdim=True)
         x = (x - u) / torch.sqrt(s + self.variance_epsilon)
         return self.weight * x + self.bias
+
 
 class BertEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings.
@@ -341,6 +348,24 @@ class BertAttention(nn.Module):
         attention_output = self.output(self_output, input_tensor)
         return attention_output
 
+class BertAttentionUt(nn.Module):
+    def __init__(self, config):
+        super(BertAttentionUt, self).__init__()
+        self.temporal_embedding = nn.Embedding(config.num_hidden_layers, config.hidden_size)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.self = BertSelfAttention(config)
+        self.output = BertSelfOutput(config)
+
+    def forward(self, input_tensor, attention_mask, ut_time):
+            
+        temp_tensor = torch.tensor([ut_time], dtype=torch.long, device=input_tensor.device)
+        temp_out = self.temporal_embedding(temp_tensor)
+        temp_out = self.dropout(temp_out)
+        temp_out = temp_out.expand_as(input_tensor)
+        self_output = self.self(input_tensor + temp_out , attention_mask)
+        attention_output = self.output(self_output, input_tensor)
+        return attention_output
+
 
 class BertIntermediate(nn.Module):
     def __init__(self, config):
@@ -384,6 +409,20 @@ class BertLayer(nn.Module):
         layer_output = self.output(intermediate_output, attention_output)
         return layer_output
 
+class BertLayerUt(nn.Module):
+    def __init__(self, config):
+        super(BertLayerUt, self).__init__()
+        self.attention = BertAttentionUt(config)
+        self.intermediate = BertIntermediate(config)
+        self.output = BertOutput(config)
+
+    def forward(self, hidden_states, attention_mask, ut_time):
+
+        attention_output = self.attention(hidden_states, attention_mask, ut_time)
+        intermediate_output = self.intermediate(attention_output)
+        layer_output = self.output(intermediate_output, attention_output)
+        return layer_output
+
 
 class BertEncoder(nn.Module):
     def __init__(self, config):
@@ -404,14 +443,22 @@ class BertEncoder(nn.Module):
 class BertEncoderUt(nn.Module):
     def __init__(self, config):
         super(BertEncoderUt, self).__init__()
-        self.layer = BertLayer(config)
+        if config.use_temporal_embeddings:
+            self.layer = BertLayerUt(config)
+            self.use_temporal_embeddings = True
+        else:
+            self.layer = BertLayer(config)
+            self.use_temporal_embeddings = False
         self.hidden_layer_number = config.num_hidden_layers
         #self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
 
     def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True):
         all_encoder_layers = []
-        for _ in range(self.hidden_layer_number):
-            hidden_states = self.layer(hidden_states, attention_mask)
+        for ut_time in range(self.hidden_layer_number):
+            if self.use_temporal_embeddings:
+                hidden_states = self.layer(hidden_states, attention_mask, ut_time)
+            else:
+                hidden_states = self.layer(hidden_states, attention_mask)
             if output_all_encoded_layers:
                 all_encoder_layers.append(hidden_states)
         if not output_all_encoded_layers:
@@ -869,16 +916,23 @@ class BertModelUtNoEmbedding(BertPreTrainedModel):
     """
     def __init__(self, config):
         super(BertModelUtNoEmbedding, self).__init__(config)
+        if config.use_mask_embeddings:
+            self.mask_embedding = nn.Embedding(2, config.hidden_size)
+            self.dropout = nn.Dropout()
+            self.mask_token_number = config.mask_token_number
+            self.use_mask_embeddings = True
+        else:
+            self.use_mask_embeddings = False
         self.encoder = BertEncoderUt(config)
         self.apply(self.init_bert_weights)
 
 
 
-    def forward(self, input_tokens, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
+    def forward(self, input_tokens, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
         if attention_mask is None:
-            attention_mask = torch.ones_like(input_ids)
+            attention_mask = torch.ones_like(input_tokens)
         if token_type_ids is None:
-            token_type_ids = torch.zeros_like(input_ids)
+            token_type_ids = torch.zeros_like(input_tokens)
 
         # We create a 3D attention mask from a 2D tensor mask.
         # Sizes are [batch_size, 1, 1, to_seq_length]
@@ -894,6 +948,14 @@ class BertModelUtNoEmbedding(BertPreTrainedModel):
         # effectively the same as removing these entirely.
         extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+
+        
+        if self.use_mask_embeddings:
+            mask_in = torch.eq(input_ids, self.mask_token_number)
+            mask_in = torch.as_tensor(mask_in, dtype = torch.long, device = input_tokens.device)
+            mask_out = self.mask_embedding(mask_in)
+            mask_out = self.dropout(mask_out)
+            input_tokens = input_tokens + mask_out
 
         encoded_layers = self.encoder(input_tokens,
                                       extended_attention_mask,
@@ -1181,7 +1243,7 @@ class UTafterBert(BertPreTrainedModel):
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None):
         bert_tokens, _ = self.bert(input_ids, token_type_ids, attention_mask,
                                        output_all_encoded_layers=False)
-        sequence_output = self.ut(bert_tokens, token_type_ids, attention_mask,
+        sequence_output = self.ut(bert_tokens, input_ids, token_type_ids, attention_mask,
                                        output_all_encoded_layers=False)
         
         prediction_scores = self.cls(sequence_output)

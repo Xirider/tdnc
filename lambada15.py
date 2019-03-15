@@ -513,9 +513,10 @@ def main():
     lower_case = not args.do_upper_case
     tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case= lower_case)
 
+    mask_token_number = tokenizer.vocab["[MASK]"]
     # first ist pretrained bert, second is ut following
     config = BertConfig(30522)
-    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers)
+    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number)
 
 
     num_train_optimization_steps = None
@@ -523,7 +524,7 @@ def main():
     if args.do_train:
 
         train_dataset = LambadaTrain(_TRAINDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, creation_length= args.max_seq_length - 20, short_factor= args.short_factor)
-    
+
         num_train_optimization_steps = int(
             len(train_dataset) / args.train_batch_size / args.gradient_accumulation_steps) * args.num_train_epochs
         if args.local_rank != -1:

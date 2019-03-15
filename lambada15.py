@@ -641,7 +641,7 @@ def main():
         param_optimizer = list(model.ut.named_parameters())
         print("updating only ut part")
         if args.cls_train:
-            param_optimizer = list(model.ut.named_parameters(), model.cls.named_parameters())
+            param_optimizer.extend(list(model.cls.named_parameters()))
 
     else:
         param_optimizer = list(model.named_parameters())

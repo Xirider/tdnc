@@ -486,7 +486,9 @@ def main():
                 help="layers for ut model")
     parser.add_argument("--load_model", default="", type=str, required=False,
                     help="Load model in corresponding Model folder")
-    
+    parser.add_argument("--cls_train",
+                action='store_true',
+                help="Whether to train the cls layer")
 
     args = parser.parse_args()
 
@@ -516,9 +518,10 @@ def main():
     mask_token_number = tokenizer.vocab["[MASK]"]
     # first ist pretrained bert, second is ut following
     config = BertConfig(30522)
-    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, use_mask_embeddings=False, use_temporal_embeddings=False)
+    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number)
+
+    # to test without ut embeddings: , use_mask_embeddings=False, use_temporal_embeddings=False
     
-    print("this run is without mask and temporal embeddings")
 
     num_train_optimization_steps = None
 
@@ -599,6 +602,9 @@ def main():
         model.ut.train()
         model.cls.eval()
 
+        if args.cls_train:
+            model.cls.train()
+
         
         for param in model.bert.parameters():
             param.requires_grad = False
@@ -612,6 +618,9 @@ def main():
             model.bert.eval()
             model.ut.train()
             model.cls.eval()
+
+            if args.cls_train:
+                model.cls.train()
 
 
 
@@ -631,6 +640,9 @@ def main():
     if args.model_type == "UTafterBertPretrained":
         param_optimizer = list(model.ut.named_parameters())
         print("updating only ut part")
+        if args.cls_train:
+            param_optimizer = list(model.ut.named_parameters(), model.cls.named_parameters())
+
     else:
         param_optimizer = list(model.named_parameters())
         print("updating all parameters")

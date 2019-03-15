@@ -603,6 +603,7 @@ def main():
             param.requires_grad = False
 
     if args.load_model != "":
+        print("Load model saved model")
         model.load_state_dict(torch.load(_MODELS / args.load_model / "pytorch_model.pt"))
         model.train()
 

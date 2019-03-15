@@ -516,8 +516,9 @@ def main():
     mask_token_number = tokenizer.vocab["[MASK]"]
     # first ist pretrained bert, second is ut following
     config = BertConfig(30522)
-    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number)
-
+    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, use_mask_embeddings=False, use_temporal_embeddings=False)
+    
+    print("this run is without mask and temporal embeddings")
 
     num_train_optimization_steps = None
 

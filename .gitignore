@@ -2,3 +2,4 @@ models/
 labada_data_intermediate/
 .vscode
 __pycache__
+checkpoints

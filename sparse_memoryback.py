@@ -42,8 +42,6 @@ class SparseMemory(nn.Module):
     self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)
     self.index_checks = index_checks
     self.direct_write = direct_write
-    #n needs to be exchanged to true token lenght
-    self.s = 2
 
     self.print_tensors = False
 
@@ -98,22 +96,20 @@ class SparseMemory(nn.Module):
     if 'indexes' in hidden:
       [x.reset() for x in hidden['indexes']]
     else:
-
-      try:
-        # create new indexes, try to use FAISS, fall back to FLAN
-        from faiss_index import FAISSIndex
-        import pdb; pdb.set_trace()
-        hidden['indexes'] = \
-            [FAISSIndex(cell_size=self.cell_size,
-                        nr_cells=self.mem_size, K=self.K, num_lists=self.num_lists,
-                        probes=self.index_checks, gpu_id=self.mem_gpu_id) for x in range(b)]
-      except Exception as e:
-        print("\nFalling back to FLANN (CPU). \nFor using faster, GPU based indexes, install FAISS: `conda install faiss-gpu -c pytorch`")
-        from flann_index import FLANNIndex
-        hidden['indexes'] = \
-            [FLANNIndex(cell_size=self.cell_size,
-                        nr_cells=self.mem_size, K=self.K, num_kdtrees=self.num_lists,
-                        probes=self.index_checks, gpu_id=self.mem_gpu_id) for x in range(b)]
+      # create new indexes, try to use FAISS, fall back to FLAN
+      from faiss_index import FAISSIndex
+      import pdb; pdb.set_trace()
+      hidden['indexes'] = \
+          [FAISSIndex(cell_size=self.cell_size,
+                      nr_cells=self.mem_size, K=self.K, num_lists=self.num_lists,
+                      probes=self.index_checks, gpu_id=self.mem_gpu_id) for x in range(b)]
+      # except Exception as e:
+      #   print("\nFalling back to FLANN (CPU). \nFor using faster, GPU based indexes, install FAISS: `conda install faiss-gpu -c pytorch`")
+      #   from flann_index import FLANNIndex
+      #   hidden['indexes'] = \
+      #       [FLANNIndex(cell_size=self.cell_size,
+      #                   nr_cells=self.mem_size, K=self.K, num_kdtrees=self.num_lists,
+      #                   probes=self.index_checks, gpu_id=self.mem_gpu_id) for x in range(b)]
 
     # add existing memory into indexes
     pos = hidden['read_positions'].squeeze().data.cpu().numpy()
@@ -137,8 +133,6 @@ class SparseMemory(nn.Module):
     b = batch_size
     r = self.read_heads
     c = self.c
-    s = self.s
-
 
     if hidden is None:
       hidden = {
@@ -149,12 +143,10 @@ class SparseMemory(nn.Module):
           'read_weights': cuda(T.zeros(b, m).fill_(δ), gpu_id=self.gpu_id),
           'write_weights': cuda(T.zeros(b, m).fill_(δ), gpu_id=self.gpu_id),
           'read_vectors': cuda(T.zeros(b, r, w).fill_(δ), gpu_id=self.gpu_id),
-          #n need to add one place for each readhead instead of just 1
+          
           'least_used_mem': cuda(T.zeros(b, 1).fill_(c + 1), gpu_id=self.gpu_id).long(),
           'usage': cuda(T.zeros(b, m), gpu_id=self.gpu_id),
-          'read_positions': cuda(T.arange(0, c*s).expand(b, c), gpu_id=self.gpu_id).long(),
-          #x lets each position head read a different position
-          'read_pos_list': [ cuda(T.arange(x*c, (x+1)*c).expand(b, c), gpu_id=self.gpu_id).long() for x in range(s)]
+          'read_positions': cuda(T.arange(0, c).expand(b, c), gpu_id=self.gpu_id).long()
           #n read gate should be added here
       }
       hidden = self.rebuild_indexes(hidden, erase=False)
@@ -372,50 +364,41 @@ class SparseMemory(nn.Module):
 
   def forward(self, ξ, hidden):
     t = time.time()
-    #x added fake double input
-    #n need to remove again
-    ξ = torch.stack([ξ, ξ], dim=1)
+
     # ξ = ξ.detach()
     m = self.mem_size
     w = self.cell_size
     r = self.read_heads
     c = self.c
     b = ξ.size()[0]
-    # s is the number of sequence tokens of input
-    s = ξ.size()[1]
-    self.s = s
 
-
-    # if self.independent_linears:
-    #   # r read keys (b * r * w)
-    #   read_query = self.read_query_transform(ξ).view(b, r, w)
-    #   # write key (b * 1 * w)
-    #   write_vector = self.write_vector_transform(ξ).view(b, 1, w)
-    #   # write vector (b * 1 * r)
-    #   interpolation_gate = F.sigmoid(self.interpolation_gate_transform(ξ)).view(b, c)
-    #   # write gate (b * 1)
-    #   write_gate = F.sigmoid(self.write_gate_transform(ξ).view(b, 1))
-    # else:
-    ξ = self.interface_weights(ξ)
-    # r read keys (b * r * w)
-    read_query = ξ[:, :, :r * w].contiguous().view(b, s, r, w)
-    # write key (b * 1 * w)
-    if self.direct_write:
-      write_vector = ξ
+    if self.independent_linears:
+      # r read keys (b * r * w)
+      read_query = self.read_query_transform(ξ).view(b, r, w)
+      # write key (b * 1 * w)
+      write_vector = self.write_vector_transform(ξ).view(b, 1, w)
       # write vector (b * 1 * r)
-      interpolation_gate = F.sigmoid(ξ[: , :, r * w: r * w + c]).contiguous().view(b, s, c)
+      interpolation_gate = F.sigmoid(self.interpolation_gate_transform(ξ)).view(b, c)
       # write gate (b * 1)
-      #n maybe need to change unsqueeze dim (changed it already from 1 to 2, but dont know)
-      write_gate = F.sigmoid(ξ[: ,:, -1].contiguous()).view(b, s, 1)
+      write_gate = F.sigmoid(self.write_gate_transform(ξ).view(b, 1))
     else:
-      write_vector = ξ[:, :,  r * w: r * w + w].contiguous().view(b,s , 1, w)
-      # write vector (b * 1 * r)
-      interpolation_gate = F.sigmoid(ξ[:,:, r * w + w: r * w + w + c]).contiguous().view(b, s, c)
-      # write gate (b * 1)
-      
-      write_gate = F.sigmoid(ξ[:, :, -1].contiguous()).view(b, s, 1)
+      ξ = self.interface_weights(ξ)
+      # r read keys (b * r * w)
+      read_query = ξ[:, :r * w].contiguous().view(b, r, w)
+      # write key (b * 1 * w)
+      if self.direct_write:
+        write_vector = ξ
+        # write vector (b * 1 * r)
+        interpolation_gate = F.sigmoid(ξ[:, r * w: r * w + c]).contiguous().view(b, c)
+        # write gate (b * 1)
+        write_gate = F.sigmoid(ξ[:, -1].contiguous()).unsqueeze(1).view(b, 1)
+      else:
+        write_vector = ξ[:, r * w: r * w + w].contiguous().view(b, 1, w)
+        # write vector (b * 1 * r)
+        interpolation_gate = F.sigmoid(ξ[:, r * w + w: r * w + w + c]).contiguous().view(b, c)
+        # write gate (b * 1)
+        write_gate = F.sigmoid(ξ[:, -1].contiguous()).unsqueeze(1).view(b, 1)
 
-    import pdb; pdb.set_trace()
     self.timestep += 1
     #x changed order to first read then write
     read_vectors, hidden = self.read(read_query, hidden)

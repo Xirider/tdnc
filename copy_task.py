@@ -11,7 +11,7 @@ import os
 import math
 import time
 import argparse
-from visdom import Visdom
+#from visdom import Visdom
 
 sys.path.insert(0, os.path.join('..', '..'))
 
@@ -60,7 +60,7 @@ parser.add_argument('-visdom', action='store_true', help='plot memory content on
 args = parser.parse_args()
 print(args)
 
-viz = Visdom()
+#viz = Visdom()
 # assert viz.check_connection()
 
 print(args.input_size)

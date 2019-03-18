@@ -96,20 +96,19 @@ class SparseMemory(nn.Module):
     if 'indexes' in hidden:
       [x.reset() for x in hidden['indexes']]
     else:
-      # create new indexes, try to use FAISS, fall back to FLANN
-      try:
-        from faiss_index import FAISSIndex
-        hidden['indexes'] = \
-            [FAISSIndex(cell_size=self.cell_size,
-                        nr_cells=self.mem_size, K=self.K, num_lists=self.num_lists,
-                        probes=self.index_checks, gpu_id=self.mem_gpu_id) for x in range(b)]
-      except Exception as e:
-        print("\nFalling back to FLANN (CPU). \nFor using faster, GPU based indexes, install FAISS: `conda install faiss-gpu -c pytorch`")
-        from flann_index import FLANNIndex
-        hidden['indexes'] = \
-            [FLANNIndex(cell_size=self.cell_size,
-                        nr_cells=self.mem_size, K=self.K, num_kdtrees=self.num_lists,
-                        probes=self.index_checks, gpu_id=self.mem_gpu_id) for x in range(b)]
+      # create new indexes, try to use FAISS, fall back to FLAN
+      from faiss_index import FAISSIndex
+      hidden['indexes'] = \
+          [FAISSIndex(cell_size=self.cell_size,
+                      nr_cells=self.mem_size, K=self.K, num_lists=self.num_lists,
+                      probes=self.index_checks, gpu_id=self.mem_gpu_id) for x in range(b)]
+      # except Exception as e:
+      #   print("\nFalling back to FLANN (CPU). \nFor using faster, GPU based indexes, install FAISS: `conda install faiss-gpu -c pytorch`")
+      #   from flann_index import FLANNIndex
+      #   hidden['indexes'] = \
+      #       [FLANNIndex(cell_size=self.cell_size,
+      #                   nr_cells=self.mem_size, K=self.K, num_kdtrees=self.num_lists,
+      #                   probes=self.index_checks, gpu_id=self.mem_gpu_id) for x in range(b)]
 
     # add existing memory into indexes
     pos = hidden['read_positions'].squeeze().data.cpu().numpy()

@@ -98,6 +98,7 @@ class SparseMemory(nn.Module):
     else:
       # create new indexes, try to use FAISS, fall back to FLAN
       from faiss_index import FAISSIndex
+      import pdb; pdb.set_trace()
       hidden['indexes'] = \
           [FAISSIndex(cell_size=self.cell_size,
                       nr_cells=self.mem_size, K=self.K, num_lists=self.num_lists,

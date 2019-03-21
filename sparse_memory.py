@@ -48,6 +48,7 @@ class SparseMemory(nn.Module):
 
     self.print_tensors = False
     self.usage_type = "lru"
+    print(f"num_lists: {self.num_lists} , probes: {self.index_checks}")
 
     m = self.mem_size
     w = self.cell_size
@@ -152,10 +153,9 @@ class SparseMemory(nn.Module):
           "read_vectors": cuda(T.zeros(b, r, w).fill_(δ), gpu_id=self.gpu_id),
           #n need to add one place for each readhead instead of just 1
           "least_used_mem": cuda(T.arange((c*s)+1, (c*s)+s+1).expand(b, s), gpu_id=self.gpu_id).long(),
-          "usage": cuda(T.arange(0.01, 0, -(0.01/m)).expand(b, m), gpu_id=self.gpu_id).contiguous(),
-          "read_positions": cuda(T.arange(0, c*s).expand(b, c*s), gpu_id=self.gpu_id).long(),
+          "usage": cuda(T.arange(1, 0, -(1/m)).expand(b, m) / 1000, gpu_id=self.gpu_id).contiguous(),
+          "read_positions": cuda(T.arange(0, c*s).expand(b, c*s), gpu_id=self.gpu_id).long()
           #x lets each position head read a different position
-          "read_pos_list": [ cuda(T.arange(x*c, (x+1)*c).expand(b, c), gpu_id=self.gpu_id).long() for x in range(s)]
           #n read gate should be added here
       }
       hidden = self.rebuild_indexes(hidden, erase=False)
@@ -200,8 +200,8 @@ class SparseMemory(nn.Module):
     if self.print_tensors: print("pos end")
     for batch in range(self.b):
       # update indexes
-      if self.print_tensors: print("pos batch")
-      if self.print_tensors: print(pos[batch][-1])
+      # if self.print_tensors: print("pos batch")
+      # if self.print_tensors: print(pos[batch][-1])
       hidden["indexes"][batch].reset()
       #n this could be changed to the old version
       # hidden["indexes"][batch].add(hidden["memory"][batch], last=(pos[batch][-1] if not self.mem_limit_reached else None))

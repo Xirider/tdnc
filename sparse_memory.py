@@ -21,7 +21,7 @@ class SparseMemory(nn.Module):
       read_heads=4,
       sparse_reads=4,
       num_lists=None,
-      index_checks=None,
+      index_checks=32,
       gpu_id=-1,
       mem_gpu_id=-1,
       direct_write=False
@@ -39,8 +39,9 @@ class SparseMemory(nn.Module):
     # if self.print_tensors: print(f"k: {self.K}")
     # if self.print_tensors: print(f"mem_size: {self.mem_size}")
     self.read_heads = read_heads
-    self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)+1
-    self.index_checks = max(self.num_lists // 20, self.num_lists) if index_checks is None else index_checks
+    self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)
+    #self.index_checks = max(self.num_lists // 20, self.num_lists) if index_checks is None else index_checks
+    self.index_checks =index_checks
     self.direct_write = direct_write
     #n needs to be exchanged to true token lenght
     self.s = 2

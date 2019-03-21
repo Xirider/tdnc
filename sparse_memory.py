@@ -21,7 +21,7 @@ class SparseMemory(nn.Module):
       read_heads=4,
       sparse_reads=4,
       num_lists=None,
-      index_checks=32,
+      index_checks=None,
       gpu_id=-1,
       mem_gpu_id=-1,
       direct_write=False
@@ -40,8 +40,8 @@ class SparseMemory(nn.Module):
     # if self.print_tensors: print(f"mem_size: {self.mem_size}")
     self.read_heads = read_heads
     self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)
-    #self.index_checks = max(self.num_lists // 20, self.num_lists) if index_checks is None else index_checks
-    self.index_checks =index_checks
+    self.index_checks = max(self.num_lists // 20, self.num_lists) if index_checks is None else index_checks
+    #self.index_checks =index_checks
     #self.num_lists = 10
     #self.index_checks = 10
     self.direct_write = direct_write
@@ -209,7 +209,7 @@ class SparseMemory(nn.Module):
       hidden["indexes"][batch].reset()
       #n this could be changed to the old version
       # hidden["indexes"][batch].add(hidden["memory"][batch], last=(pos[batch][-1] if not self.mem_limit_reached else None))
-      hidden["indexes"][batch].add(hidden["memory"][batch], last=-1)
+      hidden["indexes"][batch].add(hidden["memory"][batch], last=None)
       # else:
       #        # update indexes
 

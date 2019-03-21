@@ -42,8 +42,8 @@ class SparseMemory(nn.Module):
     # self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)
     # self.index_checks = max(self.num_lists // 20, self.num_lists) if index_checks is None else index_checks
     # #self.index_checks =index_checks
-    self.num_lists = 32
-    self.index_checks = 32
+    self.num_lists = 10
+    self.index_checks = 10
     self.direct_write = direct_write
     #n needs to be exchanged to true token lenght
     self.s = 2

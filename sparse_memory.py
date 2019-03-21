@@ -389,7 +389,7 @@ class SparseMemory(nn.Module):
     if self.print_tensors: print("read positions c")
     if self.print_tensors: print(read_positions)
     # issue with batchsize 1
-    #read_positions = T.clamp(read_positions, 0, max_length)
+    read_positions = T.clamp(read_positions, 0, max_length)
     if self.print_tensors: print("read positions d")
     if self.print_tensors: print(read_positions)
     read_positions = read_positions.view(b, -1)

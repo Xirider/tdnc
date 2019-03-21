@@ -144,7 +144,7 @@ class SparseMemory(nn.Module):
     if hidden is None:
       hidden = {
           # warning can be a huge chunk of contiguous memory
-          "memory": cuda(T.zeros(b, m, w).fill_(δ), gpu_id=self.mem_gpu_id).contiguous(),
+          "memory": cuda(T.zeros(b, m, w).fill_(δ), gpu_id=self.mem_gpu_id),
           
           "visible_memory": cuda(T.zeros(b, c, w).fill_(δ), gpu_id=self.mem_gpu_id).contiguous(),
 

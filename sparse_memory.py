@@ -150,8 +150,8 @@ class SparseMemory(nn.Module):
           
           "visible_memory": cuda(T.zeros(b, c, w).fill_(δ), gpu_id=self.mem_gpu_id).contiguous(),
 
-          "write_weights": cuda(T.zeros(b, s).fill_(δ), gpu_id=self.gpu_id).contigous(),
-          "read_vectors": cuda(T.zeros(b, r, w).fill_(δ), gpu_id=self.gpu_id).contigous(),
+          "write_weights": cuda(T.zeros(b, s).fill_(δ), gpu_id=self.gpu_id).contiguous(),
+          "read_vectors": cuda(T.zeros(b, r, w).fill_(δ), gpu_id=self.gpu_id).contiguous(),
           #n need to add one place for each readhead instead of just 1
           "least_used_mem": cuda(T.arange((c*s)+1, (c*s)+s+1).expand(b, s), gpu_id=self.gpu_id).long().contiguous(),
           "usage": cuda(T.arange(1, 0, -(1/m)).expand(b, m) / 1000, gpu_id=self.gpu_id).contiguous(),

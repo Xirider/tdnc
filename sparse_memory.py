@@ -40,7 +40,7 @@ class SparseMemory(nn.Module):
     # if self.print_tensors: print(f"mem_size: {self.mem_size}")
     self.read_heads = read_heads
     self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)+1
-    self.index_checks = min(num_lists // 20, num_lists) if index_checks is None else index_checks
+    self.index_checks = min(self.num_lists // 20, self.num_lists) if index_checks is None else index_checks
     self.direct_write = direct_write
     #n needs to be exchanged to true token lenght
     self.s = 2

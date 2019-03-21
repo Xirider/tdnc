@@ -40,7 +40,7 @@ class SparseMemory(nn.Module):
     # if self.print_tensors: print(f"mem_size: {self.mem_size}")
     self.read_heads = read_heads
     self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)+1
-    self.index_checks = min(self.num_lists // 20, self.num_lists) if index_checks is None else index_checks
+    self.index_checks = max(self.num_lists // 20, self.num_lists) if index_checks is None else index_checks
     self.direct_write = direct_write
     #n needs to be exchanged to true token lenght
     self.s = 2
@@ -259,7 +259,8 @@ class SparseMemory(nn.Module):
     # erase matrix
     # combine erase matrixes for all heads
     I = T.sum(I, dim=1)
-    I = T.ge(I,  T.ones(I.size()).cuda()).float()
+    ones = cuda(T.ones(I.size()), gpu_id=self.gpu_id)
+    I = T.ge(I,  ones).float()
     erase_matrix = I.unsqueeze(2).expand(self.b, self.vis_size, self.cell_size)
 
 

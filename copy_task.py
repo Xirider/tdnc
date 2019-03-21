@@ -11,7 +11,7 @@ import os
 import math
 import time
 import argparse
-#from visdom import Visdom
+from visdom import Visdom
 
 sys.path.insert(0, os.path.join('..', '..'))
 
@@ -60,7 +60,7 @@ parser.add_argument('-visdom', action='store_true', help='plot memory content on
 args = parser.parse_args()
 print(args)
 
-#viz = Visdom()
+viz = Visdom()
 # assert viz.check_connection()
 
 print(args.input_size)
@@ -251,97 +251,96 @@ if __name__ == '__main__':
       # print(F.relu6(output))
       last_save_losses = []
 
-      if args.memory_type == 'dnc':
-        viz.heatmap(
-            v['memory'],
-            opts=dict(
-                xtickstep=10,
-                ytickstep=2,
-                title='Memory, t: ' + str(epoch) + ', loss: ' + str(loss),
-                ylabel='layer * time',
-                xlabel='mem_slot * mem_size'
-            )
-        )
-
-      if args.memory_type == 'dnc':
-        viz.heatmap(
-            v['link_matrix'][-1].reshape(args.mem_slot, args.mem_slot),
-            opts=dict(
-                xtickstep=10,
-                ytickstep=2,
-                title='Link Matrix, t: ' + str(epoch) + ', loss: ' + str(loss),
-                ylabel='mem_slot',
-                xlabel='mem_slot'
-            )
-        )
-      elif args.memory_type == 'sdnc':
-        viz.heatmap(
-            v['link_matrix'][-1].reshape(args.mem_slot, -1),
-            opts=dict(
-                xtickstep=10,
-                ytickstep=2,
-                title='Link Matrix, t: ' + str(epoch) + ', loss: ' + str(loss),
-                ylabel='mem_slot',
-                xlabel='mem_slot'
-            )
-        )
-
-        viz.heatmap(
-            v['rev_link_matrix'][-1].reshape(args.mem_slot, -1),
-            opts=dict(
-                xtickstep=10,
-                ytickstep=2,
-                title='Reverse Link Matrix, t: ' + str(epoch) + ', loss: ' + str(loss),
-                ylabel='mem_slot',
-                xlabel='mem_slot'
-            )
-        )
-
-      elif args.memory_type == 'sdnc' or args.memory_type == 'dnc':
-        viz.heatmap(
-            v['precedence'],
-            opts=dict(
-                xtickstep=10,
-                ytickstep=2,
-                title='Precedence, t: ' + str(epoch) + ', loss: ' + str(loss),
-                ylabel='layer * time',
-                xlabel='mem_slot'
-            )
-        )
-
-      if args.memory_type == 'sdnc':
-        viz.heatmap(
-            v['read_positions'],
-            opts=dict(
-                xtickstep=10,
-                ytickstep=2,
-                title='Read Positions, t: ' + str(epoch) + ', loss: ' + str(loss),
-                ylabel='layer * time',
-                xlabel='mem_slot'
-            )
-        )
-
       viz.heatmap(
-          v['read_weights'],
+          v['memory'],
           opts=dict(
               xtickstep=10,
               ytickstep=2,
-              title='Read Weights, t: ' + str(epoch) + ', loss: ' + str(loss),
+              title='Memory, t: ' + str(epoch) + ', loss: ' + str(loss),
               ylabel='layer * time',
-              xlabel='nr_read_heads * mem_slot'
+              xlabel='mem_slot * mem_size'
           )
       )
 
-      viz.heatmap(
-          v['write_weights'],
-          opts=dict(
-              xtickstep=10,
-              ytickstep=2,
-              title='Write Weights, t: ' + str(epoch) + ', loss: ' + str(loss),
-              ylabel='layer * time',
-              xlabel='mem_slot'
-          )
-      )
+      # if args.memory_type == 'dnc':
+      #   viz.heatmap(
+      #       v['link_matrix'][-1].reshape(args.mem_slot, args.mem_slot),
+      #       opts=dict(
+      #           xtickstep=10,
+      #           ytickstep=2,
+      #           title='Link Matrix, t: ' + str(epoch) + ', loss: ' + str(loss),
+      #           ylabel='mem_slot',
+      #           xlabel='mem_slot'
+      #       )
+      #   )
+      # elif args.memory_type == 'sdnc':
+      #   viz.heatmap(
+      #       v['link_matrix'][-1].reshape(args.mem_slot, -1),
+      #       opts=dict(
+      #           xtickstep=10,
+      #           ytickstep=2,
+      #           title='Link Matrix, t: ' + str(epoch) + ', loss: ' + str(loss),
+      #           ylabel='mem_slot',
+      #           xlabel='mem_slot'
+      #       )
+      #   )
+
+      #   viz.heatmap(
+      #       v['rev_link_matrix'][-1].reshape(args.mem_slot, -1),
+      #       opts=dict(
+      #           xtickstep=10,
+      #           ytickstep=2,
+      #           title='Reverse Link Matrix, t: ' + str(epoch) + ', loss: ' + str(loss),
+      #           ylabel='mem_slot',
+      #           xlabel='mem_slot'
+      #       )
+      #   )
+
+      # elif args.memory_type == 'sdnc' or args.memory_type == 'dnc':
+      #   viz.heatmap(
+      #       v['precedence'],
+      #       opts=dict(
+      #           xtickstep=10,
+      #           ytickstep=2,
+      #           title='Precedence, t: ' + str(epoch) + ', loss: ' + str(loss),
+      #           ylabel='layer * time',
+      #           xlabel='mem_slot'
+      #       )
+      #   )
+
+      # if args.memory_type == 'sdnc':
+      #   viz.heatmap(
+      #       v['read_positions'],
+      #       opts=dict(
+      #           xtickstep=10,
+      #           ytickstep=2,
+      #           title='Read Positions, t: ' + str(epoch) + ', loss: ' + str(loss),
+      #           ylabel='layer * time',
+      #           xlabel='mem_slot'
+      #       )
+      #   )
+
+      # viz.heatmap(
+      #     v['read_weights'],
+      #     opts=dict(
+      #         xtickstep=10,
+      #         ytickstep=2,
+      #         title='Read Weights, t: ' + str(epoch) + ', loss: ' + str(loss),
+      #         ylabel='layer * time',
+      #         xlabel='nr_read_heads * mem_slot'
+      #     )
+      # )
+
+      # viz.heatmap(
+      #     v['write_weights'],
+      #     opts=dict(
+      #         xtickstep=10,
+      #         ytickstep=2,
+      #         title='Write Weights, t: ' + str(epoch) + ', loss: ' + str(loss),
+      #         ylabel='layer * time',
+      #         xlabel='mem_slot'
+      #     )
+      # )
 
       viz.heatmap(
           v['usage_vector'] if args.memory_type == 'dnc' else v['usage'],

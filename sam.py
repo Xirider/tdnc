@@ -91,22 +91,22 @@ class SAM(DNC):
     if not debug_obj:
       debug_obj = {
           'memory': [],
-          'visible_memory': [],
-          'read_weights': [],
-          'write_weights': [],
+          #'visible_memory': [],
+          #'read_weights': [],
+          #'write_weights': [],
           'read_vectors': [],
           'least_used_mem': [],
           'usage': [],
-          'read_positions': []
+          #'read_positions': []
       }
 
     debug_obj['memory'].append(mhx['memory'][0].data.cpu().numpy())
-    debug_obj['visible_memory'].append(mhx['visible_memory'][0].data.cpu().numpy())
-    debug_obj['read_weights'].append(mhx['read_weights'][0].unsqueeze(0).data.cpu().numpy())
-    debug_obj['write_weights'].append(mhx['write_weights'][0].unsqueeze(0).data.cpu().numpy())
+    #debug_obj['visible_memory'].append(mhx['visible_memory'][0].data.cpu().numpy())
+    #debug_obj['read_weights'].append(mhx['read_weights'][0].unsqueeze(0).data.cpu().numpy())
+    #debug_obj['write_weights'].append(mhx['write_weights'][0].unsqueeze(0).data.cpu().numpy())
     debug_obj['read_vectors'].append(mhx['read_vectors'][0].data.cpu().numpy())
     debug_obj['least_used_mem'].append(mhx['least_used_mem'][0].unsqueeze(0).data.cpu().numpy())
     debug_obj['usage'].append(mhx['usage'][0].unsqueeze(0).data.cpu().numpy())
-    debug_obj['read_positions'].append(mhx['read_positions'][0].unsqueeze(0).data.cpu().numpy())
+    #debug_obj['read_positions'].append(mhx['read_positions'][0].unsqueeze(0).data.cpu().numpy())
 
     return debug_obj

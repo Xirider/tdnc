@@ -70,6 +70,7 @@ class DNC(nn.Module):
 
     self.nn_input_size = self.input_size + self.read_vectors_size
     self.nn_output_size = self.output_size + self.read_vectors_size
+    self.sam_output_size = self.output_size + self.w * 2
 
     self.rnns = []
     self.memories = []
@@ -115,7 +116,7 @@ class DNC(nn.Module):
       setattr(self, 'rnn_layer_memory_shared', self.memories[0])
 
     # final output layer
-    self.output = nn.Linear(self.nn_output_size, self.input_size)
+    self.output = nn.Linear(self.sam_output_size, self.input_size)
     orthogonal_(self.output.weight)
 
     if self.gpu_id != -1:
@@ -158,18 +159,14 @@ class DNC(nn.Module):
     if not debug_obj:
       debug_obj = {
           'memory': [],
-          'link_matrix': [],
-          'precedence': [],
-          'read_weights': [],
-          'write_weights': [],
           'usage_vector': [],
       }
 
     debug_obj['memory'].append(mhx['memory'][0].data.cpu().numpy())
-    debug_obj['link_matrix'].append(mhx['link_matrix'][0][0].data.cpu().numpy())
-    debug_obj['precedence'].append(mhx['precedence'][0].data.cpu().numpy())
-    debug_obj['read_weights'].append(mhx['read_weights'][0].data.cpu().numpy())
-    debug_obj['write_weights'].append(mhx['write_weights'][0].data.cpu().numpy())
+    # debug_obj['link_matrix'].append(mhx['link_matrix'][0][0].data.cpu().numpy())
+    # debug_obj['precedence'].append(mhx['precedence'][0].data.cpu().numpy())
+    #debug_obj['read_weights'].append(mhx['read_weights'][0].data.cpu().numpy())[0]
+    #debug_obj['write_weights'].append(mhx['write_weights'][0].data.cpu().numpy())[0]
     debug_obj['usage_vector'].append(mhx['usage_vector'][0].unsqueeze(0).data.cpu().numpy())
     return debug_obj
 
@@ -196,7 +193,9 @@ class DNC(nn.Module):
       else:
         read_vecs, mhx = self.memories[layer](ξ, mhx)
       # the read vectors
-      read_vectors = read_vecs.view(-1, self.w * self.r)
+      # read_vectors = read_vecs.view(-1, self.w * self.r)
+      read_vectors = read_vecs.view(-1, self.w * self.memories[0].s)
+
     else:
       read_vectors = None
 
@@ -260,8 +259,25 @@ class DNC(nn.Module):
         inputs[time] = outs[time]
 
     if self.debug:
+      #import pdb; pdb.set_trace()
       viz = {k: np.array(v) for k, v in viz.items()}
-      viz = {k: v.reshape(v.shape[0], v.shape[1] * v.shape[2]) for k, v in viz.items()}
+
+      # for k, v in viz.items():
+      #     print(k)
+      #     print(v.shape)
+      #     #import pdb; pdb.set_trace()
+      #     #v = np.array(v)
+          
+      #     v= v.reshape(v.shape[0], v.shape[1] * v.shape[2])
+      #     print(v.shape)
+      #     import pdb; pdb.set_trace()
+      #viz = {k: np.array(v) for k, v in viz.items()}
+
+      #import pdb; pdb.set_trace()
+      viz = {k: v.reshape(v.shape[0],v.shape[1]*v.shape[2]) for k, v in viz.items()}
+      #viz = {k: v.reshape(-1) for k, v in viz.items()}
+      #abc = None
+
 
     # pass through final output layer
     inputs = [self.output(i) for i in inputs]

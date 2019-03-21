@@ -39,11 +39,13 @@ class SparseMemory(nn.Module):
     # if self.print_tensors: print(f"k: {self.K}")
     # if self.print_tensors: print(f"mem_size: {self.mem_size}")
     self.read_heads = read_heads
-    self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)
+    # self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)
+    self.num_lists = 4
     self.index_checks = index_checks
     self.direct_write = direct_write
     #n needs to be exchanged to true token lenght
     self.s = 2
+    self.input_size = self.input_size // 2
 
     self.print_tensors = False
     self.usage_type = "original"
@@ -187,7 +189,6 @@ class SparseMemory(nn.Module):
   def write_into_sparse_memory(self, hidden):
     visible_memory = hidden["visible_memory"]
     positions = hidden["read_positions"]
-    import pdb; pdb.set_trace()
 
     # update memory
     hidden["memory"].scatter_(1, positions.unsqueeze(2).expand(self.b, self.vis_size, self.cell_size), visible_memory)
@@ -262,9 +263,7 @@ class SparseMemory(nn.Module):
     I = T.sum(I, dim=1)
     I = T.ge(I,  T.ones(I.size())).float()
     erase_matrix = I.unsqueeze(2).expand(self.b, self.vis_size, self.cell_size)
-    
-    write_vector[0][0][0] = 1
-    write_vector[0][1][0] = 1
+
 
     writings = T.matmul(write_weights.unsqueeze(3), write_vector)
 
@@ -439,13 +438,14 @@ class SparseMemory(nn.Module):
 
     #x added fake double input
     #n need to remove again
-    ξ = torch.stack([ξ, ξ], dim=1)
+    # ξ = torch.stack([ξ, ξ], dim=1)
     # ξ = ξ.detach()
     m = self.mem_size
     w = self.cell_size
     r = self.read_heads
     c = self.c
     b = ξ.size()[0]
+    ξ = ξ.view(b, self.s, -1)
     self.b = b
     # s is the number of sequence tokens of input
     s = ξ.size()[1]

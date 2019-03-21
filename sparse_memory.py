@@ -48,7 +48,7 @@ class SparseMemory(nn.Module):
     self.input_size = self.input_size // 2
 
     self.print_tensors = False
-    self.usage_type = "original"
+    self.usage_type = "lru"
 
     m = self.mem_size
     w = self.cell_size
@@ -257,7 +257,6 @@ class SparseMemory(nn.Module):
     # hidden["write_weights"].scatter_(1, hidden["read_positions"], write_weights)
 
     hidden["usage"] = self.update_usage_after(hidden["read_positions"], read_weights, write_weights, usage, relevant_usages)
-
     # erase matrix
     # combine erase matrixes for all heads
     I = T.sum(I, dim=1)
@@ -274,6 +273,9 @@ class SparseMemory(nn.Module):
 
 
     hidden = self.write_into_sparse_memory(hidden)
+    # torch.set_printoptions(threshold=5000)
+    # print(hidden["memory"][0].sum(1) > 0.05)
+    # import pdb; pdb.set_trace()
 
     # update least used memory cell
     if self.print_tensors: print("usage before lum")
@@ -314,7 +316,7 @@ class SparseMemory(nn.Module):
     write_weights_col = T.sum(write_weights, 1)
 
 
-    u = (read_weights_col + write_weights_col > self.δ).float()
+    u = (T.abs(read_weights_col) + T.abs(write_weights_col) > self.δ).float()
 
     # usage before write
 

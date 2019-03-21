@@ -27,7 +27,7 @@ class FAISSIndex(object):
     if self.gpu_id != -1:
       self.res.initializeForDevice(self.gpu_id)
 
-    nr_samples = self.nr_cells * 100 * self.cell_size
+    nr_samples = self.nr_cells * 1000 * self.cell_size
     train = train if train is not None else T.randn(self.nr_cells * 100, self.cell_size)
 
     self.index = faiss.GpuIndexIVFFlat(self.res, self.cell_size, self.num_lists, faiss.METRIC_L2)

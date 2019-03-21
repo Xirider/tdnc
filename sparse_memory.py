@@ -259,8 +259,8 @@ class SparseMemory(nn.Module):
     # erase matrix
     # combine erase matrixes for all heads
     I = T.sum(I, dim=1)
-    ones = T.ones(I.size()).cuda()
-    I = T.ge(I,  ones).float()
+
+    I = T.ge(I,  1).float()
     erase_matrix = I.unsqueeze(2).expand(self.b, self.vis_size, self.cell_size)
 
 

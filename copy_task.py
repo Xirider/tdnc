@@ -12,6 +12,7 @@ import math
 import time
 import argparse
 
+
 sys.path.insert(0, os.path.join('..', '..'))
 
 import torch as T
@@ -58,7 +59,6 @@ parser.add_argument('-visdom', action='store_true', help='plot memory content on
 
 args = parser.parse_args()
 print(args)
-
 if args.visdom:
   from visdom import Visdom
   viz = Visdom()

@@ -207,7 +207,7 @@ class SparseMemory(nn.Module):
       hidden["indexes"][batch].reset()
       #n this could be changed to the old version
       # hidden["indexes"][batch].add(hidden["memory"][batch], last=(pos[batch][-1] if not self.mem_limit_reached else None))
-      hidden["indexes"][batch].add(hidden["memory"][batch], last=None)
+      hidden["indexes"][batch].add(hidden["memory"][batch], last=-1)
       # else:
       #        # update indexes
 
@@ -348,6 +348,8 @@ class SparseMemory(nn.Module):
     read_positions = []
     keys = keys.view(b, s* self.read_heads, -1)
     # we search for k cells per read head
+    print("keys")
+    print(keys)
     if self.print_tensors: print("sparse read now")
     for batch in range(b):
 

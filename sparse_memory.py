@@ -89,7 +89,7 @@ class SparseMemory(nn.Module):
     self.I = cuda(1 - T.eye(self.c).unsqueeze(0), gpu_id=self.gpu_id)  # (1 * n * n)
     self.δ = 0.005  # minimum usage
     self.timestep = 0
-    self.mem_limit_reached = False
+    # self.mem_limit_reached = False
     if self.gpu_id != -1:
       self.cuda()
 
@@ -128,7 +128,7 @@ class SparseMemory(nn.Module):
 
     else:
       self.timestep = 0
-      self.mem_limit_reached = False
+      #self.mem_limit_reached = False
 
     return hidden
 
@@ -193,9 +193,9 @@ class SparseMemory(nn.Module):
     hidden["memory"].scatter_(1, positions.unsqueeze(2).expand(self.b, self.vis_size, self.cell_size), visible_memory)
 
     # non-differentiable operations
-    pos = positions.data.cpu().numpy()
-    if self.print_tensors: print("pos start")
-    if self.print_tensors: print(pos)
+    # pos = positions.data.cpu().numpy()
+    # if self.print_tensors: print("pos start")
+    # if self.print_tensors: print(pos)
     #for p in pos: if self.print_tensors: print(p)
     if self.print_tensors: print("pos end")
     for batch in range(self.b):
@@ -217,8 +217,8 @@ class SparseMemory(nn.Module):
       #   if self.print_tensors: print(f"mem slots: {m}")
       #   hidden["indexes"][batch].add(hidden["memory"][batch], last=(pos[0][-1] if not self.mem_limit_reached else None))
 
-    mem_limit_reached = hidden["least_used_mem"][0].data.cpu().numpy()[0] >= self.mem_size - 1
-    self.mem_limit_reached = mem_limit_reached or self.mem_limit_reached
+    # mem_limit_reached = hidden["least_used_mem"][0].data.cpu().numpy()[0] >= self.mem_size - 1
+    # self.mem_limit_reached = mem_limit_reached or self.mem_limit_reached
 
     return hidden
 

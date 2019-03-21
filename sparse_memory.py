@@ -150,12 +150,12 @@ class SparseMemory(nn.Module):
           
           "visible_memory": cuda(T.zeros(b, c, w).fill_(δ), gpu_id=self.mem_gpu_id).contiguous(),
 
-          "write_weights": cuda(T.zeros(b, s).fill_(δ), gpu_id=self.gpu_id),
-          "read_vectors": cuda(T.zeros(b, r, w).fill_(δ), gpu_id=self.gpu_id),
+          "write_weights": cuda(T.zeros(b, s).fill_(δ), gpu_id=self.gpu_id).contigous(),
+          "read_vectors": cuda(T.zeros(b, r, w).fill_(δ), gpu_id=self.gpu_id).contigous(),
           #n need to add one place for each readhead instead of just 1
-          "least_used_mem": cuda(T.arange((c*s)+1, (c*s)+s+1).expand(b, s), gpu_id=self.gpu_id).long(),
+          "least_used_mem": cuda(T.arange((c*s)+1, (c*s)+s+1).expand(b, s), gpu_id=self.gpu_id).long().contigous(),
           "usage": cuda(T.arange(1, 0, -(1/m)).expand(b, m) / 1000, gpu_id=self.gpu_id).contiguous(),
-          "read_positions": cuda(T.arange(0, c*s).expand(b, c*s), gpu_id=self.gpu_id).long()
+          "read_positions": cuda(T.arange(0, c*s).expand(b, c*s), gpu_id=self.gpu_id).long().contigous()
           #x lets each position head read a different position
           #n read gate should be added here
       }

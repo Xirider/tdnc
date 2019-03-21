@@ -119,11 +119,12 @@ class SparseMemory(nn.Module):
                         probes=self.index_checks, gpu_id=self.mem_gpu_id) for x in range(b)]
 
     # add existing memory into indexes
-    pos = hidden["read_positions"].squeeze().data.cpu().numpy()
+    #pos = hidden["read_positions"].squeeze().data.cpu().numpy()
     if not erase:
       for n, i in enumerate(hidden["indexes"]):
         i.reset()
-        i.add(hidden["memory"][n], last=pos[n][-1])
+        # i.add(hidden["memory"][n], last=pos[n][-1])
+        i.add(hidden["memory"][n], last=None)
         # else:
         #   i.reset()
         #   i.add(hidden["memory"][n], last=pos[-1])

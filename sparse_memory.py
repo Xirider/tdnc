@@ -399,7 +399,9 @@ class SparseMemory(nn.Module):
     self.vis_size = read_positions.size(1)
     
     # expand to get all the w dimension locations
-
+    print("read positions and memory size")
+    print(read_positions)
+    print(memory.size())
     visible_memory = memory.gather(1, read_positions.unsqueeze(2).expand(b, self.vis_size, w).contiguous())
     
     # take the vectors of the sparse reads and lru and let the read heads each look for the most similiar vector, then do softmax among all the vectors

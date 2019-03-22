@@ -40,7 +40,7 @@ class SparseMemory(nn.Module):
     # if self.print_tensors: print(f"mem_size: {self.mem_size}")
     self.read_heads = read_heads
     self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)
-    self.index_checks = max(self.num_lists // 20, self.num_lists) if index_checks is None else index_checks
+    self.index_checks = max(self.num_lists // 10, 10) if index_checks is None else index_checks
     #self.index_checks =index_checks
     #self.num_lists = 10
     #self.index_checks = 10

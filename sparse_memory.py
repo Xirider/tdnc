@@ -359,8 +359,8 @@ class SparseMemory(nn.Module):
     if self.print_tensors: print("sparse read now")
     if self.print_tensors: print("positions")
     for batch in range(b):
-
-      distances, positions = indexes[batch].search(keys[batch])
+      key = keys[batch].clone()
+      distances, positions = indexes[batch].search(key)
       if self.print_tensors: print(keys[batch])
       if self.print_tensors: print(positions)
       

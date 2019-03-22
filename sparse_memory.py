@@ -270,7 +270,7 @@ class SparseMemory(nn.Module):
     I = T.ge(I,  1).float()
     erase_matrix = I.unsqueeze(2).expand(self.b, self.vis_size, self.cell_size)
     if self.print_tensors: print(f"write vector {write_vector}")
-    write_weights[0].fill_(55)
+    #write_weights[0].fill_(55)
     writings = T.matmul(write_weights.unsqueeze(3), write_vector)
     if self.print_tensors: print(f"writings before sum {writings}")
     writings = T.sum(writings, dim=1)

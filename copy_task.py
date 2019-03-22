@@ -233,6 +233,7 @@ if __name__ == '__main__':
     last_save_losses.append(loss_value)
 
     if summarize:
+      print(mhx["read_positions"])
       loss = np.mean(last_save_losses)
       # print(input_data)
       # print("1111111111111111111111111111111111111111111111")

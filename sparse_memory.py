@@ -202,16 +202,18 @@ class SparseMemory(nn.Module):
     # if self.print_tensors: print(pos)
     #for p in pos: if self.print_tensors: print(p)
     if self.print_tensors: print("pos end")
+    if self.print_tensors: print(hidden["memory"].sum(dim=2)<-0.1)
+    if self.print_tensors: print("memory summed across dim 2")
+    if self.print_tensors: print(hidden["memory"].sum(dim=2))
     #hidden["memory"][0].fill_(55)
     for batch in range(self.b):
       # update indexes
       # if self.print_tensors: print("pos batch")
       # if self.print_tensors: print(pos[batch][-1])
+      import pdb; pdb.set_trace()
       hidden["indexes"][batch].reset()
       #n this could be changed to the old version
-      if self.print_tensors: print(hidden["memory"].sum(dim=2)<-0.1)
-      if self.print_tensors: print("memory summed across dim 2")
-      if self.print_tensors: print(hidden["memory"].sum(dim=2))
+
       # hidden["indexes"][batch].add(hidden["memory"][batch], last=(pos[batch][-1] if not self.mem_limit_reached else None))
       hidden["indexes"][batch].add(hidden["memory"][batch], last=None)
 

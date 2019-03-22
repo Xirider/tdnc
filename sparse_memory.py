@@ -49,7 +49,7 @@ class SparseMemory(nn.Module):
     self.s = 2
     self.input_size = self.input_size // 2
 
-    self.print_tensors = False
+    self.print_tensors = True
     self.usage_type = "lru"
     print(f"num_lists: {self.num_lists} , probes: {self.index_checks}")
 
@@ -202,7 +202,7 @@ class SparseMemory(nn.Module):
     # if self.print_tensors: print(pos)
     #for p in pos: if self.print_tensors: print(p)
     if self.print_tensors: print("pos end")
-    hidden["memory"][0].fill_(55)
+    #hidden["memory"][0].fill_(55)
     for batch in range(self.b):
       # update indexes
       # if self.print_tensors: print("pos batch")
@@ -363,10 +363,11 @@ class SparseMemory(nn.Module):
     for batch in range(b):
       #key = keys[batch].clone()
       distances, positions = indexes[batch].search(keys[batch])
+      if self.print_tensors: print(f"keys for batch {batch}")
       if self.print_tensors: print(keys[batch])
-      if self.print_tensors: print(positions)
+      #if self.print_tensors: print(positions)
       
-      if self.print_tensors: print("bathc positions")
+      if self.print_tensors: print("positions returned for this batch")
       if self.print_tensors: print(positions)
       if self.print_tensors: print(positions.size())
       read_positions.append(positions)

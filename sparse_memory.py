@@ -36,7 +36,7 @@ class SparseMemory(nn.Module):
     self.input_size = input_size
     self.independent_linears = independent_linears
     self.K = sparse_reads if self.mem_size > sparse_reads else self.mem_size
-    # if self.print_tensors: print(f"k: {self.K}")
+    # if self. if self.print_tensors: print(f"k: {self.K}")
     # if self.print_tensors: print(f"mem_size: {self.mem_size}")
     self.read_heads = read_heads
     self.num_lists = num_lists if num_lists is not None else int(self.mem_size / 100)
@@ -208,6 +208,7 @@ class SparseMemory(nn.Module):
       # if self.print_tensors: print(pos[batch][-1])
       hidden["indexes"][batch].reset()
       #n this could be changed to the old version
+      if self.print_tensors: print(hidden["memory"].sum(dim=2)<-0.1)
       # hidden["indexes"][batch].add(hidden["memory"][batch], last=(pos[batch][-1] if not self.mem_limit_reached else None))
       hidden["indexes"][batch].add(hidden["memory"][batch], last=None)
       # else:
@@ -248,14 +249,14 @@ class SparseMemory(nn.Module):
     # zeros = cuda(T.zeros(self.b, self.s, self.vis_size - self.c), gpu_id=self.gpu_id)
 
     # # interpolation_gate = T.cat((interpolation_gate, zeros), 2)
-
+    if self.print_tensors: print(f"interpolation_gate: {interpolation_gate}")
     # abc = interpolation_gate.gather(2, rw_sorted_indexes)
     interpolation_gate = interpolation_gate
     x = interpolation_gate * read_weights
     # or to a new location
     y = (1 - interpolation_gate) * I
     write_weights = write_gate * (x + y)
-
+    if self.print_tensors: print(f"write_weight: {write_weights}")
     # store the write weights
     # hidden["write_weights"].scatter_(1, hidden["read_positions"], write_weights)
 
@@ -266,16 +267,20 @@ class SparseMemory(nn.Module):
 
     I = T.ge(I,  1).float()
     erase_matrix = I.unsqueeze(2).expand(self.b, self.vis_size, self.cell_size)
-
+    if self.print_tensors: print(f"write vector {write_vector}")
 
     writings = T.matmul(write_weights.unsqueeze(3), write_vector)
-
+    if self.print_tensors: print(f"writings before sum {writings}")
     writings = T.sum(writings, dim=1)
+    if self.print_tensors: print(f"writings after sum {writings}")
     # write into memory
     hidden["visible_memory"] = hidden["visible_memory"] * \
         (1 - erase_matrix) + writings
 
-
+    abc = hidden["visible_memory"]
+    if self.print_tensors: print(f"visible memory {abc}")
+    
+    
     hidden = self.write_into_sparse_memory(hidden)
     # torch.set_printoptions(threshold=5000)
     # print(hidden["memory"][0].sum(1) > 0.05)
@@ -352,9 +357,12 @@ class SparseMemory(nn.Module):
     # we search for k cells per read head
 
     if self.print_tensors: print("sparse read now")
+    if self.print_tensors: print("positions")
     for batch in range(b):
 
       distances, positions = indexes[batch].search(keys[batch])
+      if self.print_tensors: print(keys[batch])
+      if self.print_tensors: print(positions)
       
       if self.print_tensors: print("bathc positions")
       if self.print_tensors: print(positions)
@@ -403,9 +411,9 @@ class SparseMemory(nn.Module):
     self.vis_size = read_positions.size(1)
     
     #expand to get all the w dimension locations
-    print("read positions and memory size")
-    print(read_positions)
-    print(memory.size())
+    if self.print_tensors: print("read positions and memory size")
+    if self.print_tensors: print(read_positions)
+    if self.print_tensors: print(memory.size())
     visible_memory = memory.gather(1, read_positions.unsqueeze(2).expand(b, self.vis_size, w).contiguous())
     
     # take the vectors of the sparse reads and lru and let the read heads each look for the most similiar vector, then do softmax among all the vectors

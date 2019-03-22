@@ -85,5 +85,6 @@ class FAISSIndex(object):
       cast_long(ptr(labels))
     )
     T.cuda.synchronize()
+    #print(distances)
     return (distances, (labels-1))
 

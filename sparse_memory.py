@@ -202,7 +202,7 @@ class SparseMemory(nn.Module):
     # if self.print_tensors: print(pos)
     #for p in pos: if self.print_tensors: print(p)
     if self.print_tensors: print("pos end")
-    #hidden["memory"][0].fill_(55)
+    hidden["memory"][0].fill_(55)
     for batch in range(self.b):
       # update indexes
       # if self.print_tensors: print("pos batch")
@@ -360,6 +360,7 @@ class SparseMemory(nn.Module):
     #keys[0].fill_(55)
     if self.print_tensors: print("sparse read now")
     if self.print_tensors: print("positions")
+    #keys.fill_(1)
     for batch in range(b):
       #key = keys[batch].clone()
       distances, positions = indexes[batch].search(keys[batch])

@@ -192,9 +192,10 @@ class SparseMemory(nn.Module):
           "least_used_mem": cuda(T.arange(0, s).expand(b, s), gpu_id=self.gpu_id).long().contiguous(),
           "usage": cuda(T.arange(1, 0, -(1/m)).expand(b, m) / 1000, gpu_id=self.gpu_id).contiguous(),
           #"usage": cuda(T.rand(b, m) / 1000.0, gpu_id=self.gpu_id).contiguous(),
-          "read_positions": cuda(T.arange(0, c*s).expand(b, c*s), gpu_id=self.gpu_id).long()
+          "read_positions": cuda(T.arange(0, c*s).expand(b, c*s), gpu_id=self.gpu_id).long(),
           #x lets each position head read a different position
           #n read gate should be added here
+          "indexes": hidden["indexes"]
       }
       hidden = self.rebuild_indexes(hidden, erase=False)
       self.timestep = 0

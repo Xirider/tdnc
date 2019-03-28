@@ -549,7 +549,7 @@ class BertLayerDNC(nn.Module):
         # summed_wo_masks = summed.scatter_(1, mask_index, -10000.0)
 
         # now use topk positions, and turn into python number list
-        v, top = torch.topk(summed,k=total_tokens, dim=1, sorted=True)
+        _, top = torch.topk(summed,k=total_tokens, dim=1, sorted=True)
 
         if self.norm_before: layer_output = self.LayerNorm(layer_output)
         # concat i with topk list with new created filllist function

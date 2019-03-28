@@ -153,7 +153,8 @@ class BertConfig(object):
                  mask_token_number = 103,
                  max_comp_length =256,
                  sum_type = "sum",
-                 memory_size = 512):
+                 memory_size = 512,
+                 direct_write=False):
         """Constructs BertConfig.
 
         Args:
@@ -202,6 +203,7 @@ class BertConfig(object):
             self.max_comp_length = max_comp_length
             self.sum_type = sum_type
             self.memory_size = memory_size
+            self.direct_write = direct_write
 
         else:
             raise ValueError("First argument must be either a vocabulary size (int)"
@@ -493,7 +495,7 @@ class BertLayerDNC(nn.Module):
         self.gpu_id = 0
         self.memory = SparseMemory(input_size= config.hidden_size, mem_size=config.memory_size, cell_size=config.hidden_size,
          independent_linears=False, read_heads=1, sparse_reads=4, num_lists=None, index_checks=None, 
-         gpu_id=self.gpu_id, mem_gpu_id=self.gpu_id, direct_write=False)
+         gpu_id=self.gpu_id, mem_gpu_id=self.gpu_id, direct_write=config.direct_write)
 
         self.attention = BertAttentionDNC(config)
         self.intermediate = BertIntermediate(config)

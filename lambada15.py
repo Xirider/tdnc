@@ -462,6 +462,9 @@ def main():
     parser.add_argument('--fp16',
                         action='store_true',
                         help="Whether to use 16-bit float precision instead of 32-bit")
+    parser.add_argument('--direct_write',
+                        action='store_true',
+                        help="whether to directly write the attention tokens to the dnc memory, or first use an linear transformation")
     parser.add_argument('--loss_scale',
                         type = float, default = 0,
                         help = "Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
@@ -527,7 +530,7 @@ def main():
     mask_token_number = tokenizer.vocab["[MASK]"]
     # first ist pretrained bert, second is ut following
     config = BertConfig(30522)
-    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, max_comp_length = args.max_comp_length, memory_size = args.memory_size)
+    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, max_comp_length = args.max_comp_length, memory_size = args.memory_size, direct_write =args.direct_write)
 
     # to test without ut embeddings: , use_mask_embeddings=False, use_temporal_embeddings=False
     
@@ -654,6 +657,13 @@ def main():
             if args.cls_train:
                 model.cls.train()
 
+        if args.model_type == "TDNCafterBertPretrained":
+            model.bert.eval()
+            model.ut.train()
+            model.cls.eval()
+
+            if args.cls_train:
+                model.cls.train()
 
 
     if args.fp16:
@@ -732,7 +742,12 @@ def main():
             nb_tr_examples, nb_tr_steps = 0, 0
             loss_ema = 0
             acc_ema = 0
+            lendata =len(train_dataloader)
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
+
+                if step == lendata or step == lendata-1:
+                    break
+                
                 batch = tuple(t.to(device) for t in batch)
                 input_ids, input_mask, segment_ids, lm_label_ids  = batch
                 loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids)
@@ -786,7 +801,6 @@ def main():
                     print("Predicted words:")
                     joinedrealwords = " ".join(realwords)
                     print(joinedrealwords)
-
 
 
 

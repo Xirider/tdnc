@@ -536,7 +536,7 @@ class SparseMemory(nn.Module):
     read_query = ξ[:, :, :r * w].contiguous().view(b, s, r, w)
     # write key (b * 1 * w)
     if self.direct_write:
-      write_vector = e
+      write_vector = e.unsqueeze(2).contiguous().view(b, s, 1, w)
       # write vector (b * 1 * r)
       interpolation_gate = T.sigmoid(ξ[: , :, r * w: r * w + 1]).contiguous().view(b, s, 1)
       # write gate (b * 1)

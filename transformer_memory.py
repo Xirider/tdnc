@@ -166,6 +166,7 @@ class SparseMemory(nn.Module):
           #n read gate should be added here
       }
       hidden = self.rebuild_indexes(hidden, erase=False)
+      self.timestep = 0
     elif not erase:
       hidden["memory"] = hidden["memory"].clone().detach()
       hidden["visible_memory"] = hidden["visible_memory"].clone().detach()
@@ -546,7 +547,6 @@ class SparseMemory(nn.Module):
       # write gate (b * 1)
       
       write_gate = T.sigmoid(ξ[:, :, -1].contiguous()).view(b, s, 1)
-
 
     self.timestep += 1
     #x changed order to first read then write

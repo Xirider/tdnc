@@ -152,7 +152,8 @@ class BertConfig(object):
                  use_temporal_embeddings=True,
                  mask_token_number = 103,
                  max_comp_length =256,
-                 sum_type = "sum"):
+                 sum_type = "sum",
+                 memory_size = 512):
         """Constructs BertConfig.
 
         Args:
@@ -200,6 +201,8 @@ class BertConfig(object):
             self.mask_token_number = mask_token_number
             self.max_comp_length = max_comp_length
             self.sum_type = sum_type
+            self.memory_size = memory_size
+
         else:
             raise ValueError("First argument must be either a vocabulary size (int)"
                              "or the path to a pretrained model config file (str)")
@@ -487,9 +490,8 @@ class BertLayerUt(nn.Module):
 class BertLayerDNC(nn.Module):
     def __init__(self, config):
         super(BertLayerDNC, self).__init__()
-
         self.gpu_id = 0
-        self.memory = SparseMemory(input_size= config.hidden_size, mem_size=512, cell_size=config.hidden_size,
+        self.memory = SparseMemory(input_size= config.hidden_size, mem_size=config.memory_size, cell_size=config.hidden_size,
          independent_linears=False, read_heads=1, sparse_reads=4, num_lists=None, index_checks=None, 
          gpu_id=self.gpu_id, mem_gpu_id=self.gpu_id, direct_write=False)
 

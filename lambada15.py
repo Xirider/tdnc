@@ -413,6 +413,11 @@ def main():
                         default=256,
                         type=int,
                         help="Maximum amount of tokens in the Ut transformer after the DNC reads tokens from memory")
+
+    parser.add_argument("--memory_size",
+                        default=512,
+                        type=int,
+                        help="DNC memory size")
     parser.add_argument("--do_train",
                         action='store_true',
                         help="Whether to run training.")
@@ -522,7 +527,7 @@ def main():
     mask_token_number = tokenizer.vocab["[MASK]"]
     # first ist pretrained bert, second is ut following
     config = BertConfig(30522)
-    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, max_comp_length = args.max_comp_length)
+    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, max_comp_length = args.max_comp_length, memory_size = args.memory_size)
 
     # to test without ut embeddings: , use_mask_embeddings=False, use_temporal_embeddings=False
     

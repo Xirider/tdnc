@@ -173,9 +173,10 @@ class SparseMemory(nn.Module):
       hidden["write_weights"] = hidden["write_weights"].clone().contiguous().detach()
       hidden["read_vectors"] = hidden["read_vectors"].clone().contiguous().detach()
       hidden["least_used_mem"] = hidden["least_used_mem"].clone().contiguous().detach()
-      hidden["usage"] = hidden["usage"].clone().contiguous().detach()
+      hidden["usage"] = hidden["usage"].clone().contiguous().detach() / (self.timestep +1)
       hidden["read_positions"] = hidden["read_positions"].clone().detach()
       hidden = self.rebuild_indexes(hidden, erase)
+      self.timestep = 0
 
 
     else:

@@ -504,7 +504,7 @@ class BertLayerDNC(nn.Module):
         self.memory_hidden = None
         self.sum_type = config.sum_type
 
-        self.norm_before = False
+        self.norm_before = True
 
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
 

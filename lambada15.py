@@ -21,7 +21,7 @@ from tqdm import tqdm, trange
 
 from lambadatest import LambadaTest
 
-from modeling import BertForMaskedLM, BertConfig, BertForMaskedLMUt, UTafterBert
+from modeling import BertForMaskedLM, BertConfig, BertForMaskedLMUt, UTafterBert, TDNCafterBert
 from tokenization import BertTokenizer
 from optimization import BertAdam, warmup_linear
 
@@ -409,6 +409,10 @@ def main():
                         help="The maximum total input sequence length after WordPiece tokenization. \n"
                              "Sequences longer than this will be truncated, and sequences shorter \n"
                              "than this will be padded.")
+    parser.add_argument("--max_comp_length",
+                        default=256,
+                        type=int,
+                        help="Maximum amount of tokens in the Ut transformer after the DNC reads tokens from memory")
     parser.add_argument("--do_train",
                         action='store_true',
                         help="Whether to run training.")
@@ -518,7 +522,7 @@ def main():
     mask_token_number = tokenizer.vocab["[MASK]"]
     # first ist pretrained bert, second is ut following
     config = BertConfig(30522)
-    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number)
+    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, max_comp_length = args.max_comp_length)
 
     # to test without ut embeddings: , use_mask_embeddings=False, use_temporal_embeddings=False
     
@@ -555,7 +559,10 @@ def main():
         bert_state_dict = inter_model.bert.state_dict()
         cls_state_dict = inter_model.cls.state_dict()
 
-        model = UTafterBert(config, config2)
+        if args.model_type == "TDNCafterBertPretrained":
+            model = TDNCafterBert(config, config2)
+        if args.model_type == "UTafterBertPretrained":
+            model = UTafterBert(config, config2)
 
         # state = model.cls.state_dict()
         # for name in state:
@@ -609,6 +616,26 @@ def main():
         for param in model.bert.parameters():
             param.requires_grad = False
 
+    if args.model_type == "TDNCafterBertPretrained":
+
+        model = TDNCafterBert(config, config2)
+
+
+        model.load_state_dict(torch.load(_MODELS / "UTafterBertPretrained.pt"))
+
+        model.bert.eval()
+        model.ut.train()
+        model.cls.eval()
+
+        if args.cls_train:
+            model.cls.train()
+
+        
+        for param in model.bert.parameters():
+            param.requires_grad = False
+
+    
+
     if args.load_model != "":
         print("Load model saved model")
         model.load_state_dict(torch.load(_MODELS / args.load_model / "pytorch_model.pt"))
@@ -637,7 +664,7 @@ def main():
     #     model = torch.nn.DataParallel(model)
 
     # Prepare optimizer
-    if args.model_type == "UTafterBertPretrained":
+    if args.model_type == "UTafterBertPretrained" or "TDNCafterBertPretrained":
         param_optimizer = list(model.ut.named_parameters())
         print("updating only ut part")
         if args.cls_train:

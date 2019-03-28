@@ -198,6 +198,7 @@ if __name__ == '__main__':
     optimizer = optim.Adadelta(rnn.parameters(), lr=args.lr)
 
 
+
   (chx, mhx, rv) = (None, None, None)
   for epoch in range(iterations + 1):
     llprint("\rIteration {ep}/{tot}".format(ep=epoch, tot=iterations))

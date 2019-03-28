@@ -34,6 +34,8 @@ from torch.nn import CrossEntropyLoss
 
 from file_utils import cached_path
 
+from transformer_memory import SparseMemory
+
 logger = logging.getLogger(__name__)
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
@@ -48,6 +50,12 @@ PRETRAINED_MODEL_ARCHIVE_MAP = {
 CONFIG_NAME = 'bert_config.json'
 WEIGHTS_NAME = 'pytorch_model.bin'
 TF_WEIGHTS_NAME = 'model.ckpt'
+
+# def index_to_batch(index):
+#     indext = torch.t(index)
+#     return indext[1].clone().unsqueeze(0).view(indext[0].max()+1,-1)
+
+
 
 def load_tf_weights_in_bert(model, tf_checkpoint_path):
     """ Load tf checkpoints in a pytorch model
@@ -142,7 +150,9 @@ class BertConfig(object):
                  initializer_range=0.02,
                  use_mask_embeddings=True,
                  use_temporal_embeddings=True,
-                 mask_token_number = 103):
+                 mask_token_number = 103,
+                 max_comp_length =256,
+                 sum_type = "sum"):
         """Constructs BertConfig.
 
         Args:
@@ -188,6 +198,8 @@ class BertConfig(object):
             self.use_mask_embeddings= use_mask_embeddings
             self.use_temporal_embeddings= use_temporal_embeddings
             self.mask_token_number = mask_token_number
+            self.max_comp_length = max_comp_length
+            self.sum_type = sum_type
         else:
             raise ValueError("First argument must be either a vocabulary size (int)"
                              "or the path to a pretrained model config file (str)")
@@ -336,6 +348,18 @@ class BertSelfOutput(nn.Module):
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
         return hidden_states
 
+class BertSelfOutputDNC(nn.Module):
+    def __init__(self, config):
+        super(BertSelfOutputDNC, self).__init__()
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+    def forward(self, hidden_states, input_tensor):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states
+
 
 class BertAttention(nn.Module):
     def __init__(self, config):
@@ -366,6 +390,30 @@ class BertAttentionUt(nn.Module):
         attention_output = self.output(self_output, input_tensor)
         return attention_output
 
+class BertAttentionDNC(nn.Module):
+    def __init__(self, config):
+        super(BertAttentionDNC, self).__init__()
+        self.temporal_embedding = nn.Embedding(config.num_hidden_layers, config.hidden_size)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.self = BertSelfAttention(config)
+        self.output = BertSelfOutputDNC(config)
+
+        self.read_embedding = nn.Embedding(2, config.hidden_size)
+        self.dropout2 = nn.Dropout(config.hidden_dropout_prob)
+
+
+    def forward(self, input_tensor, attention_mask, ut_time, reads_pos):
+            
+        temp_tensor = torch.tensor([ut_time], dtype=torch.long, device=input_tensor.device)
+        temp_out = self.temporal_embedding(temp_tensor)
+        temp_out = self.dropout(temp_out)
+        temp_out = temp_out.expand_as(input_tensor)
+
+        read_embedding_output = self.dropout(self.read_embedding(reads_pos))
+
+        self_output = self.self(input_tensor + temp_out + read_embedding_output , attention_mask)
+        attention_output = self.output(self_output, input_tensor)
+        return attention_output
 
 class BertIntermediate(nn.Module):
     def __init__(self, config):
@@ -395,6 +443,18 @@ class BertOutput(nn.Module):
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
         return hidden_states
 
+class BertOutputDNC(nn.Module):
+    def __init__(self, config):
+        super(BertOutputDNC, self).__init__()
+        self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
+        
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+    def forward(self, hidden_states, input_tensor):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.dropout(hidden_states) + input_tensor
+        return hidden_states
+
 
 class BertLayer(nn.Module):
     def __init__(self, config):
@@ -422,6 +482,124 @@ class BertLayerUt(nn.Module):
         intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
         return layer_output
+
+
+class BertLayerDNC(nn.Module):
+    def __init__(self, config):
+        super(BertLayerDNC, self).__init__()
+
+        self.gpu_id = 0
+        self.memory = SparseMemory(input_size= config.hidden_size, mem_size=512, cell_size=config.hidden_size,
+         independent_linears=False, read_heads=1, sparse_reads=4, num_lists=None, index_checks=None, 
+         gpu_id=self.gpu_id, mem_gpu_id=self.gpu_id, direct_write=False)
+
+        self.attention = BertAttentionDNC(config)
+        self.intermediate = BertIntermediate(config)
+        self.output = BertOutputDNC(config)
+        self.max_comp_length = config.max_comp_length
+        self.memory_hidden = None
+        self.sum_type = config.sum_type
+
+        self.norm_before = False
+
+        self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
+
+    def forward(self, hidden_states, attention_mask, ut_time, input_number, total_tokens, mask_positions, reset_memory, erase_memory):
+        #import pdb; pdb.set_trace()
+        batch_size , token_number, _ = hidden_states.size()
+        if reset_memory:
+            self.memory_hidden = self.memory.reset(batch_size, token_number, self.memory_hidden, erase= erase_memory)
+        # use sam to read and write tokens, input mask to show dnc which positions should not read and write
+        read_tokens, self.memory_hidden = self.memory(hidden_states, self.memory_hidden, attention_mask = attention_mask)
+
+        # concat tokens
+        hidden_states = torch.cat([hidden_states, read_tokens], dim=1)
+
+        # modify attention mask to include newly read tokens
+        reads_pos = torch.cat([torch.ones_like(attention_mask, dtype=torch.long),torch.zeros_like(attention_mask, dtype=torch.long)],dim=1)
+        attention_mask = torch.cat([attention_mask, attention_mask], dim=1)
+        # add read token embedding to all newly read tokens
+
+        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+        extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype)
+
+        attention_output = self.attention(hidden_states, extended_attention_mask, ut_time, reads_pos) #attention mask needs to be updated
+        intermediate_output = self.intermediate(attention_output)
+        layer_output = self.output(intermediate_output, attention_output)
+
+        # pool tokens, excluding mask tokens (we need the mask token positions here)
+
+        # get indices for all mask tokens in i = [3, 8, 9]
+        #mask_index = (mask_positions != 0).nonzero()
+
+        # either sum or abs sum the tokens on the last dim
+        if self.sum_type == "sum":
+            summed = torch.sum(layer_output, dim=2)
+        if self.sum_type == "abs_sum":
+            summed = torch.sum(torch.abs(layer_output), dim=2)
+
+        # index the sum tensor with 1-mask_positions to get the tensor without the mask positions#
+        # or better: scatter -10000 in all mask positions using i and the sum 
+        
+        mask_positions_full = torch.cat([mask_positions.long(), torch.zeros_like(mask_positions,dtype=torch.long)], dim=1)
+        negative_mask = (mask_positions_full + 1.0 - attention_mask) * -10000.0
+        summed = summed + negative_mask.float()
+        # mask_and_padd = torch.cat([mask_index, att_index], dim=1)
+        # summed_wo_masks = summed.scatter_(1, mask_index, -10000.0)
+
+        # now use topk positions, and turn into python number list
+        v, top = torch.topk(summed,k=total_tokens, dim=1, sorted=True)
+
+        if self.norm_before: layer_output = self.LayerNorm(layer_output)
+        # concat i with topk list with new created filllist function
+        new_indices = fill_list(top, mask_positions)
+        index_tensor = torch.tensor(new_indices, dtype=torch.long, device=top.device)
+        index_tensor_big = index_tensor.unsqueeze(2).expand(index_tensor.size(0),index_tensor.size(1),layer_output.size(2))
+        # gather from layer_output with i_topk
+        #layer_output_p = layer_output[index_tensor]
+        layer_output_p = torch.gather(layer_output, dim=1, index=index_tensor_big)
+
+        if not self.norm_before: layer_output_p = self.LayerNorm(layer_output_p)
+
+        # also gather from attention mask with  i_topk
+        gathered_mask = torch.gather(attention_mask, dim=1, index=index_tensor)
+        # put
+
+
+        return layer_output_p, gathered_mask
+
+def fill_list(top, mask_positions):
+    # keeps mask indices original and fills the rest of the position with topk indices
+    b,n = mask_positions.size()
+    mask_pos = mask_positions.clone().tolist()
+    toplist = top.clone().tolist()
+    final_list = []
+    for batch in range(b):
+        tp = iter(toplist[batch])
+        curr_batch_list = []
+        for i, mask in enumerate(mask_pos[batch]):
+            if mask:
+                curr_batch_list.append(i)
+            else:
+                curr_batch_list.append(next(tp))
+        final_list.append(curr_batch_list)
+    return final_list
+
+def fill_list_1d(top, mask_positions):
+    # keeps mask indices original and fills the rest of the position with topk indices
+    b,n = mask_positions.size()
+    mask_pos = mask_positions.clone().tolist()
+    toplist = top.clone().tolist()
+    final_list = []
+    for batch in range(b):
+        tp = iter(toplist[batch])
+        for i, mask in enumerate(mask_pos[batch]):
+            if mask:
+                final_list.append([batch, i])
+            else:
+                final_list.append([batch, next(tp)])
+    return final_list
 
 
 class BertEncoder(nn.Module):
@@ -465,6 +643,37 @@ class BertEncoderUt(nn.Module):
             all_encoder_layers.append(hidden_states)
         return all_encoder_layers
 
+
+class BertEncoderDNC(nn.Module):
+    def __init__(self, config):
+        super(BertEncoderDNC, self).__init__()
+        if config.use_temporal_embeddings:
+            self.layer = BertLayerDNC(config)
+            self.use_temporal_embeddings = True
+        else:
+            self.layer = BertLayer(config)
+            print("not implemented")
+            self.use_temporal_embeddings = False
+        self.hidden_layer_number = config.num_hidden_layers
+        #self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
+
+    def forward(self, hidden_states, attention_mask, input_number, total_tokens, mask_positions, output_all_encoded_layers=True):
+        all_encoder_layers = []
+
+        for ut_time in range(self.hidden_layer_number):
+            erase_memory = True
+            if ut_time == 0:
+                reset_memory = True
+            else:
+                reset_memory = False
+            hidden_states, attention_mask = self.layer(hidden_states, attention_mask, ut_time, input_number = input_number, total_tokens=total_tokens, 
+                                            mask_positions=mask_positions, reset_memory=reset_memory, erase_memory= erase_memory)
+
+            if output_all_encoded_layers:
+                all_encoder_layers.append(hidden_states)
+        if not output_all_encoded_layers:
+            all_encoder_layers.append(hidden_states)
+        return all_encoder_layers
 
 
 class BertPooler(nn.Module):
@@ -918,7 +1127,7 @@ class BertModelUtNoEmbedding(BertPreTrainedModel):
         super(BertModelUtNoEmbedding, self).__init__(config)
         if config.use_mask_embeddings:
             self.mask_embedding = nn.Embedding(2, config.hidden_size)
-            self.dropout = nn.Dropout()
+            self.dropout = nn.Dropout(config.hidden_dropout_prob)
             self.mask_token_number = config.mask_token_number
             self.use_mask_embeddings = True
         else:
@@ -960,6 +1169,109 @@ class BertModelUtNoEmbedding(BertPreTrainedModel):
         encoded_layers = self.encoder(input_tokens,
                                       extended_attention_mask,
                                       output_all_encoded_layers=output_all_encoded_layers)
+        sequence_output = encoded_layers[-1]
+        if not output_all_encoded_layers:
+            encoded_layers = encoded_layers[-1]
+        return encoded_layers
+
+
+class BertModelDNCNoEmbedding(BertPreTrainedModel):
+    """BERT model ("Bidirectional Embedding Representations from a Transformer").
+
+    Params:
+        config: a BertConfig class instance with the configuration to build a new model
+
+    Inputs:
+        `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
+            with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
+            `extract_features.py`, `run_classifier.py` and `run_squad.py`)
+        `token_type_ids`: an optional torch.LongTensor of shape [batch_size, sequence_length] with the token
+            types indices selected in [0, 1]. Type 0 corresponds to a `sentence A` and type 1 corresponds to
+            a `sentence B` token (see BERT paper for more details).
+        `attention_mask`: an optional torch.LongTensor of shape [batch_size, sequence_length] with indices
+            selected in [0, 1]. It's a mask to be used if the input sequence length is smaller than the max
+            input sequence length in the current batch. It's the mask that we typically use for attention when
+            a batch has varying length sentences.
+        `output_all_encoded_layers`: boolean which controls the content of the `encoded_layers` output as described below. Default: `True`.
+
+    Outputs: Tuple of (encoded_layers, pooled_output)
+        `encoded_layers`: controled by `output_all_encoded_layers` argument:
+            - `output_all_encoded_layers=True`: outputs a list of the full sequences of encoded-hidden-states at the end
+                of each attention block (i.e. 12 full sequences for BERT-base, 24 for BERT-large), each
+                encoded-hidden-state is a torch.FloatTensor of size [batch_size, sequence_length, hidden_size],
+            - `output_all_encoded_layers=False`: outputs only the full sequence of hidden-states corresponding
+                to the last attention block of shape [batch_size, sequence_length, hidden_size],
+        `pooled_output`: a torch.FloatTensor of size [batch_size, hidden_size] which is the output of a
+            classifier pretrained on top of the hidden state associated to the first character of the
+            input (`CLS`) to train on the Next-Sentence task (see BERT's paper).
+
+    Example usage:
+    ```python
+    # Already been converted into WordPiece token ids
+    input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
+    input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
+    token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
+
+    config = modeling.BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
+        num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
+
+    model = modeling.BertModel(config=config)
+    all_encoder_layers, pooled_output = model(input_ids, token_type_ids, input_mask)
+    ```
+    """
+    def __init__(self, config):
+        super(BertModelDNCNoEmbedding, self).__init__(config)
+        if config.use_mask_embeddings:
+            self.mask_embedding = nn.Embedding(2, config.hidden_size)
+            self.dropout = nn.Dropout(config.hidden_dropout_prob)
+            self.mask_token_number = config.mask_token_number
+            self.use_mask_embeddings = True
+        else:
+            self.use_mask_embeddings = False
+        self.encoder = BertEncoderDNC(config)
+        self.apply(self.init_bert_weights)
+
+
+
+    def forward(self, input_tokens, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_tokens)
+        if token_type_ids is None:
+            token_type_ids = torch.zeros_like(input_tokens)
+
+        # size of non padded input for each batch
+        input_number = torch.sum(attention_mask, dim=1)
+        # max length after padding
+        total_tokens = attention_mask.size(1)
+        # We create a 3D attention mask from a 2D tensor mask.
+        # Sizes are [batch_size, 1, 1, to_seq_length]
+        # So we can broadcast to [batch_size, num_heads, from_seq_length, to_seq_length]
+        # this attention mask is more simple than the triangular masking of causal attention
+        # used in OpenAI GPT, we just need to prepare the broadcast dimension here.
+        
+
+        # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
+        # masked positions, this operation will create a tensor which is 0.0 for
+        # positions we want to attend and -10000.0 for masked positions.
+        # Since we are adding it to the raw scores before the softmax, this is
+        # effectively the same as removing these entirely.
+
+        #extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
+
+
+        mask_positions = torch.eq(input_ids, self.mask_token_number)
+
+
+        
+        if self.use_mask_embeddings:
+            mask_inter = torch.as_tensor(mask_positions, dtype = torch.long, device = input_tokens.device)
+            mask_out = self.mask_embedding(mask_inter)
+            mask_out = self.dropout(mask_out)
+            input_tokens = input_tokens + mask_out
+
+        encoded_layers = self.encoder(input_tokens, attention_mask,
+                                      input_number = input_number, total_tokens=total_tokens, 
+                                      mask_positions=mask_positions, output_all_encoded_layers=output_all_encoded_layers)
         sequence_output = encoded_layers[-1]
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
@@ -1256,353 +1568,30 @@ class UTafterBert(BertPreTrainedModel):
         else:
             return prediction_scores
 
-class BertForNextSentencePrediction(BertPreTrainedModel):
-    """BERT model with next sentence prediction head.
-    This module comprises the BERT model followed by the next sentence classification head.
-
-    Params:
-        config: a BertConfig class instance with the configuration to build a new model.
-
-    Inputs:
-        `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
-            with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
-            `extract_features.py`, `run_classifier.py` and `run_squad.py`)
-        `token_type_ids`: an optional torch.LongTensor of shape [batch_size, sequence_length] with the token
-            types indices selected in [0, 1]. Type 0 corresponds to a `sentence A` and type 1 corresponds to
-            a `sentence B` token (see BERT paper for more details).
-        `attention_mask`: an optional torch.LongTensor of shape [batch_size, sequence_length] with indices
-            selected in [0, 1]. It's a mask to be used if the input sequence length is smaller than the max
-            input sequence length in the current batch. It's the mask that we typically use for attention when
-            a batch has varying length sentences.
-        `next_sentence_label`: next sentence classification loss: torch.LongTensor of shape [batch_size]
-            with indices selected in [0, 1].
-            0 => next sentence is the continuation, 1 => next sentence is a random sentence.
-
-    Outputs:
-        if `next_sentence_label` is not `None`:
-            Outputs the total_loss which is the sum of the masked language modeling loss and the next
-            sentence classification loss.
-        if `next_sentence_label` is `None`:
-            Outputs the next sentence classification logits of shape [batch_size, 2].
-
-    Example usage:
-    ```python
-    # Already been converted into WordPiece token ids
-    input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
-    input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
-    token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
-
-    config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
-        num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
-    model = BertForNextSentencePrediction(config)
-    seq_relationship_logits = model(input_ids, token_type_ids, input_mask)
-    ```
+class TDNCafterBert(BertPreTrainedModel):
+    """BERT model with UT Transformer aftwards
+  
     """
-    def __init__(self, config):
-        super(BertForNextSentencePrediction, self).__init__(config)
+    def __init__(self, config, config_ut):
+        super(TDNCafterBert, self).__init__(config, config_ut)
         self.bert = BertModel(config)
-        self.cls = BertOnlyNSPHead(config)
+        self.ut = BertModelDNCNoEmbedding(config_ut)
+        self.cls = BertOnlyMLMHead(config, self.bert.embeddings.word_embeddings.weight)
         self.apply(self.init_bert_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, next_sentence_label=None):
-        _, pooled_output = self.bert(input_ids, token_type_ids, attention_mask,
-                                     output_all_encoded_layers=False)
-        seq_relationship_score = self.cls( pooled_output)
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None):
+        bert_tokens, _ = self.bert(input_ids, token_type_ids, attention_mask,
+                                       output_all_encoded_layers=False)
+        sequence_output = self.ut(bert_tokens, input_ids, token_type_ids, attention_mask,
+                                       output_all_encoded_layers=False)
+        
+        prediction_scores = self.cls(sequence_output)
 
-        if next_sentence_label is not None:
+        if masked_lm_labels is not None:
             loss_fct = CrossEntropyLoss(ignore_index=-1)
-            next_sentence_loss = loss_fct(seq_relationship_score.view(-1, 2), next_sentence_label.view(-1))
-            return next_sentence_loss
+            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
+            #x modified to also return scores
+            return masked_lm_loss, prediction_scores
         else:
-            return seq_relationship_score
+            return prediction_scores
 
-
-class BertForSequenceClassification(BertPreTrainedModel):
-    """BERT model for classification.
-    This module is composed of the BERT model with a linear layer on top of
-    the pooled output.
-
-    Params:
-        `config`: a BertConfig class instance with the configuration to build a new model.
-        `num_labels`: the number of classes for the classifier. Default = 2.
-
-    Inputs:
-        `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
-            with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
-            `extract_features.py`, `run_classifier.py` and `run_squad.py`)
-        `token_type_ids`: an optional torch.LongTensor of shape [batch_size, sequence_length] with the token
-            types indices selected in [0, 1]. Type 0 corresponds to a `sentence A` and type 1 corresponds to
-            a `sentence B` token (see BERT paper for more details).
-        `attention_mask`: an optional torch.LongTensor of shape [batch_size, sequence_length] with indices
-            selected in [0, 1]. It's a mask to be used if the input sequence length is smaller than the max
-            input sequence length in the current batch. It's the mask that we typically use for attention when
-            a batch has varying length sentences.
-        `labels`: labels for the classification output: torch.LongTensor of shape [batch_size]
-            with indices selected in [0, ..., num_labels].
-
-    Outputs:
-        if `labels` is not `None`:
-            Outputs the CrossEntropy classification loss of the output with the labels.
-        if `labels` is `None`:
-            Outputs the classification logits of shape [batch_size, num_labels].
-
-    Example usage:
-    ```python
-    # Already been converted into WordPiece token ids
-    input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
-    input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
-    token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
-
-    config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
-        num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
-    num_labels = 2
-
-    model = BertForSequenceClassification(config, num_labels)
-    logits = model(input_ids, token_type_ids, input_mask)
-    ```
-    """
-    def __init__(self, config, num_labels):
-        super(BertForSequenceClassification, self).__init__(config)
-        self.num_labels = num_labels
-        self.bert = BertModel(config)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, num_labels)
-        self.apply(self.init_bert_weights)
-
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
-        _, pooled_output = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
-
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            return loss
-        else:
-            return logits
-
-
-class BertForMultipleChoice(BertPreTrainedModel):
-    """BERT model for multiple choice tasks.
-    This module is composed of the BERT model with a linear layer on top of
-    the pooled output.
-
-    Params:
-        `config`: a BertConfig class instance with the configuration to build a new model.
-        `num_choices`: the number of classes for the classifier. Default = 2.
-
-    Inputs:
-        `input_ids`: a torch.LongTensor of shape [batch_size, num_choices, sequence_length]
-            with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
-            `extract_features.py`, `run_classifier.py` and `run_squad.py`)
-        `token_type_ids`: an optional torch.LongTensor of shape [batch_size, num_choices, sequence_length]
-            with the token types indices selected in [0, 1]. Type 0 corresponds to a `sentence A`
-            and type 1 corresponds to a `sentence B` token (see BERT paper for more details).
-        `attention_mask`: an optional torch.LongTensor of shape [batch_size, num_choices, sequence_length] with indices
-            selected in [0, 1]. It's a mask to be used if the input sequence length is smaller than the max
-            input sequence length in the current batch. It's the mask that we typically use for attention when
-            a batch has varying length sentences.
-        `labels`: labels for the classification output: torch.LongTensor of shape [batch_size]
-            with indices selected in [0, ..., num_choices].
-
-    Outputs:
-        if `labels` is not `None`:
-            Outputs the CrossEntropy classification loss of the output with the labels.
-        if `labels` is `None`:
-            Outputs the classification logits of shape [batch_size, num_labels].
-
-    Example usage:
-    ```python
-    # Already been converted into WordPiece token ids
-    input_ids = torch.LongTensor([[[31, 51, 99], [15, 5, 0]], [[12, 16, 42], [14, 28, 57]]])
-    input_mask = torch.LongTensor([[[1, 1, 1], [1, 1, 0]],[[1,1,0], [1, 0, 0]]])
-    token_type_ids = torch.LongTensor([[[0, 0, 1], [0, 1, 0]],[[0, 1, 1], [0, 0, 1]]])
-    config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
-        num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
-    num_choices = 2
-
-    model = BertForMultipleChoice(config, num_choices)
-    logits = model(input_ids, token_type_ids, input_mask)
-    ```
-    """
-    def __init__(self, config, num_choices):
-        super(BertForMultipleChoice, self).__init__(config)
-        self.num_choices = num_choices
-        self.bert = BertModel(config)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, 1)
-        self.apply(self.init_bert_weights)
-
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
-        flat_input_ids = input_ids.view(-1, input_ids.size(-1))
-        flat_token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1))
-        flat_attention_mask = attention_mask.view(-1, attention_mask.size(-1))
-        _, pooled_output = self.bert(flat_input_ids, flat_token_type_ids, flat_attention_mask, output_all_encoded_layers=False)
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
-        reshaped_logits = logits.view(-1, self.num_choices)
-
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(reshaped_logits, labels)
-            return loss
-        else:
-            return reshaped_logits
-
-
-class BertForTokenClassification(BertPreTrainedModel):
-    """BERT model for token-level classification.
-    This module is composed of the BERT model with a linear layer on top of
-    the full hidden state of the last layer.
-
-    Params:
-        `config`: a BertConfig class instance with the configuration to build a new model.
-        `num_labels`: the number of classes for the classifier. Default = 2.
-
-    Inputs:
-        `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
-            with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
-            `extract_features.py`, `run_classifier.py` and `run_squad.py`)
-        `token_type_ids`: an optional torch.LongTensor of shape [batch_size, sequence_length] with the token
-            types indices selected in [0, 1]. Type 0 corresponds to a `sentence A` and type 1 corresponds to
-            a `sentence B` token (see BERT paper for more details).
-        `attention_mask`: an optional torch.LongTensor of shape [batch_size, sequence_length] with indices
-            selected in [0, 1]. It's a mask to be used if the input sequence length is smaller than the max
-            input sequence length in the current batch. It's the mask that we typically use for attention when
-            a batch has varying length sentences.
-        `labels`: labels for the classification output: torch.LongTensor of shape [batch_size, sequence_length]
-            with indices selected in [0, ..., num_labels].
-
-    Outputs:
-        if `labels` is not `None`:
-            Outputs the CrossEntropy classification loss of the output with the labels.
-        if `labels` is `None`:
-            Outputs the classification logits of shape [batch_size, sequence_length, num_labels].
-
-    Example usage:
-    ```python
-    # Already been converted into WordPiece token ids
-    input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
-    input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
-    token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
-
-    config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
-        num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
-    num_labels = 2
-
-    model = BertForTokenClassification(config, num_labels)
-    logits = model(input_ids, token_type_ids, input_mask)
-    ```
-    """
-    def __init__(self, config, num_labels):
-        super(BertForTokenClassification, self).__init__(config)
-        self.num_labels = num_labels
-        self.bert = BertModel(config)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, num_labels)
-        self.apply(self.init_bert_weights)
-
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
-        sequence_output, _ = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
-        sequence_output = self.dropout(sequence_output)
-        logits = self.classifier(sequence_output)
-
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            # Only keep active parts of the loss
-            if attention_mask is not None:
-                active_loss = attention_mask.view(-1) == 1
-                active_logits = logits.view(-1, self.num_labels)[active_loss]
-                active_labels = labels.view(-1)[active_loss]
-                loss = loss_fct(active_logits, active_labels)
-            else:
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            return loss
-        else:
-            return logits
-
-
-class BertForQuestionAnswering(BertPreTrainedModel):
-    """BERT model for Question Answering (span extraction).
-    This module is composed of the BERT model with a linear layer on top of
-    the sequence output that computes start_logits and end_logits
-
-    Params:
-        `config`: a BertConfig class instance with the configuration to build a new model.
-
-    Inputs:
-        `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
-            with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
-            `extract_features.py`, `run_classifier.py` and `run_squad.py`)
-        `token_type_ids`: an optional torch.LongTensor of shape [batch_size, sequence_length] with the token
-            types indices selected in [0, 1]. Type 0 corresponds to a `sentence A` and type 1 corresponds to
-            a `sentence B` token (see BERT paper for more details).
-        `attention_mask`: an optional torch.LongTensor of shape [batch_size, sequence_length] with indices
-            selected in [0, 1]. It's a mask to be used if the input sequence length is smaller than the max
-            input sequence length in the current batch. It's the mask that we typically use for attention when
-            a batch has varying length sentences.
-        `start_positions`: position of the first token for the labeled span: torch.LongTensor of shape [batch_size].
-            Positions are clamped to the length of the sequence and position outside of the sequence are not taken
-            into account for computing the loss.
-        `end_positions`: position of the last token for the labeled span: torch.LongTensor of shape [batch_size].
-            Positions are clamped to the length of the sequence and position outside of the sequence are not taken
-            into account for computing the loss.
-
-    Outputs:
-        if `start_positions` and `end_positions` are not `None`:
-            Outputs the total_loss which is the sum of the CrossEntropy loss for the start and end token positions.
-        if `start_positions` or `end_positions` is `None`:
-            Outputs a tuple of start_logits, end_logits which are the logits respectively for the start and end
-            position tokens of shape [batch_size, sequence_length].
-
-    Example usage:
-    ```python
-    # Already been converted into WordPiece token ids
-    input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
-    input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
-    token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
-
-    config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
-        num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
-    model = BertForQuestionAnswering(config)
-    start_logits, end_logits = model(input_ids, token_type_ids, input_mask)
-    ```
-    """
-    def __init__(self, config):
-        super(BertForQuestionAnswering, self).__init__(config)
-        self.bert = BertModel(config)
-        # TODO check with Google if it's normal there is no dropout on the token classifier of SQuAD in the TF version
-        # self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.qa_outputs = nn.Linear(config.hidden_size, 2)
-        self.apply(self.init_bert_weights)
-
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, start_positions=None, end_positions=None):
-        sequence_output, _ = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
-        logits = self.qa_outputs(sequence_output)
-        start_logits, end_logits = logits.split(1, dim=-1)
-        start_logits = start_logits.squeeze(-1)
-        end_logits = end_logits.squeeze(-1)
-
-        if start_positions is not None and end_positions is not None:
-            # If we are on multi-GPU, split add a dimension
-            if len(start_positions.size()) > 1:
-                start_positions = start_positions.squeeze(-1)
-            if len(end_positions.size()) > 1:
-                end_positions = end_positions.squeeze(-1)
-            # sometimes the start/end positions are outside our model inputs, we ignore these terms
-            ignored_index = start_logits.size(1)
-            start_positions.clamp_(0, ignored_index)
-            end_positions.clamp_(0, ignored_index)
-
-            loss_fct = CrossEntropyLoss(ignore_index=ignored_index)
-            start_loss = loss_fct(start_logits, start_positions)
-            end_loss = loss_fct(end_logits, end_positions)
-            total_loss = (start_loss + end_loss) / 2
-            return total_loss
-        else:
-            return start_logits, end_logits

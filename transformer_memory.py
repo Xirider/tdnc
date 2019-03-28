@@ -100,9 +100,9 @@ class SparseMemory(nn.Module):
     b = hidden["memory"].size(0)
 
     # if indexes already exist, we reset them
-    if "indexes" in hidden:
-      [x.reset() for x in hidden["indexes"]]
-    else:
+    # if "indexes" in hidden:
+    #   [x.reset() for x in hidden["indexes"]]
+    if not "indexes" in hidden:
 
       try:
         # create new indexes, try to use FAISS, fall back to FLAN

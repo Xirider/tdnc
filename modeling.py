@@ -400,7 +400,7 @@ class BertAttentionUt(nn.Module):
 class BertAttentionDNC(nn.Module):
     def __init__(self, config):
         super(BertAttentionDNC, self).__init__()
-        self.temporal_embedding = nn.Embedding(config.num_hidden_layers, config.hidden_size)
+        self.temporal_embedding = nn.Embedding(max(config.num_hidden_layers, 10), config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.self = BertSelfAttention(config)
         self.output = BertSelfOutputDNC(config)
@@ -667,7 +667,7 @@ class BertEncoderDNC(nn.Module):
         all_encoder_layers = []
 
         for ut_time in range(self.hidden_layer_number):
-            erase_memory = True
+            erase_memory = False
             if ut_time == 0:
                 reset_memory = True
             else:

@@ -24,7 +24,8 @@ class SparseMemory(nn.Module):
       index_checks=None,
       gpu_id=-1,
       mem_gpu_id=-1,
-      direct_write=False
+      direct_write=False,
+      read_gate=False
       #x added direct write, independent false
   ):
     super(SparseMemory, self).__init__()
@@ -45,6 +46,7 @@ class SparseMemory(nn.Module):
     #self.num_lists = 10
     #self.index_checks = 10
     self.direct_write = direct_write
+    self.read_gate = read_gate
     #n needs to be exchanged to true token lenght
     # self.input_size = self.input_size // 2
 
@@ -81,7 +83,8 @@ class SparseMemory(nn.Module):
       else:
         #x with addition write vector calculation
         self.interface_size = (w * r) + w + 1 + 1
-      
+      if self.read_gate:
+        self.interface_size += 1
       if self.gpu_id != -1:
         self.interface_weights = nn.Linear(self.input_size, self.interface_size).cuda()
       else:
@@ -549,11 +552,16 @@ class SparseMemory(nn.Module):
       # write gate (b * 1)
       
       write_gate = T.sigmoid(ξ[:, :, -1].contiguous()).view(b, s, 1)
-
+    if self.read_gate:
+      read_gate = T.sigmoid(ξ[:, :, -2].contiguous()).view(b, s, 1)
     self.timestep += 1
     #x changed order to first read then write
     read_vectors, hidden = self.read(read_query, hidden, attention_mask)
     hidden = self.write(interpolation_gate, write_vector, write_gate, hidden, attention_mask)
+
+    if self.read_gate:
+      read_vectors = read_vectors * read_gate.expand(b,s,w)
+
     return read_vectors, hidden
     # hidden = self.write(interpolation_gate, write_vector, write_gate, hidden)
     # return self.read(read_query, hidden)

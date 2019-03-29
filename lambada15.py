@@ -501,6 +501,9 @@ def main():
     parser.add_argument("--cls_train",
                 action='store_true',
                 help="Whether to train the cls layer")
+    parser.add_argument("--read_gate",
+                action='store_true',
+                help="whether to use read gate")
 
     args = parser.parse_args()
 
@@ -530,7 +533,9 @@ def main():
     mask_token_number = tokenizer.vocab["[MASK]"]
     # first ist pretrained bert, second is ut following
     config = BertConfig(30522)
-    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, max_comp_length = args.max_comp_length, memory_size = args.memory_size, direct_write =args.direct_write)
+    config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, 
+                            max_comp_length = args.max_comp_length, memory_size = args.memory_size, direct_write =args.direct_write, 
+                            read_gate=args.read_gate)
 
     # to test without ut embeddings: , use_mask_embeddings=False, use_temporal_embeddings=False
     
@@ -801,6 +806,8 @@ def main():
                     print("Predicted words:")
                     joinedrealwords = " ".join(realwords)
                     print(joinedrealwords)
+                    # print("memory of model:")
+                    # print(model.ut.encoder.layer.memory_hidden["memory"][0].abs().sum(1))
 
 
 
@@ -849,7 +856,10 @@ def main():
                 nb_test_examples, nb_test_steps = 0, 0
                 totalcounteri = 0
                 total_acc = 0
+                lentest = len(test_dataloader)
                 for step, batch in enumerate(tqdm(test_dataloader, desc="Iteration")):
+                    if step == lentest or step == lentest-1:
+                        break
                     batch = tuple(t.to(device) for t in batch)
                     input_ids, input_mask, segment_ids, lm_label_ids  = batch
                     loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids)

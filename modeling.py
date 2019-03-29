@@ -400,7 +400,7 @@ class BertAttentionUt(nn.Module):
 class BertAttentionDNC(nn.Module):
     def __init__(self, config):
         super(BertAttentionDNC, self).__init__()
-        self.temporal_embedding = nn.Embedding(max(config.num_hidden_layers, 4), config.hidden_size)
+        self.temporal_embedding = nn.Embedding(max(config.num_hidden_layers, 10), config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.self = BertSelfAttention(config)
         self.output = BertSelfOutputDNC(config)

@@ -651,7 +651,7 @@ def main():
 
     if args.load_model != "":
         print("Load model saved model")
-        model.load_state_dict(torch.load(_MODELS / args.load_model / "pytorch_model.pt"))
+        model.load_state_dict(torch.load(_MODELS / args.load_model / "pytorch_model.pt"), strict=False)
         model.train()
 
         if args.model_type == "UTafterBertPretrained":

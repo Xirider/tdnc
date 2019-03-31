@@ -33,6 +33,7 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 
 from file_utils import cached_path
+import torchvision.utils as vutils
 
 from transformer_memory import SparseMemory
 
@@ -416,7 +417,7 @@ class BertAttentionDNC(nn.Module):
         temp_out = self.dropout(temp_out)
         temp_out = temp_out.expand_as(input_tensor)
 
-        read_embedding_output = self.dropout(self.read_embedding(reads_pos))
+        read_embedding_output = self.dropout2(self.read_embedding(reads_pos))
 
         self_output = self.self(input_tensor + temp_out + read_embedding_output , attention_mask)
         attention_output = self.output(self_output, input_tensor)
@@ -506,6 +507,13 @@ class BertLayerDNC(nn.Module):
         self.memory_hidden = None
         self.sum_type = config.sum_type
 
+        self.tensorboard = False
+        self.outer_steps = 0
+        self.inter_results = 0
+        self.mem_save = False
+        self.usage_save = False
+        self.num_hidden_layers = config.num_hidden_layers
+
         self.norm_before = False
 
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=1e-12)
@@ -516,7 +524,7 @@ class BertLayerDNC(nn.Module):
         if reset_memory:
             self.memory_hidden = self.memory.reset(batch_size, token_number, self.memory_hidden, erase= erase_memory)
         # use sam to read and write tokens, input mask to show dnc which positions should not read and write
-        read_tokens, self.memory_hidden = self.memory(hidden_states, self.memory_hidden, attention_mask = attention_mask)
+        read_tokens, self.memory_hidden, interpolation_gate, write_gate, read_gate = self.memory(hidden_states, self.memory_hidden, attention_mask = attention_mask)
 
         # concat tokens
         hidden_states = torch.cat([hidden_states, read_tokens], dim=1)
@@ -571,6 +579,40 @@ class BertLayerDNC(nn.Module):
         # also gather from attention mask with  i_topk
         gathered_mask = torch.gather(attention_mask, dim=1, index=index_tensor)
         # put
+
+        if self.tensorboard:
+            if self.outer_steps % self.inter_results == 0:
+                for elementname, element in self.memory_hidden.items():
+                    if elementname == "indexes":
+                        pass
+
+                    elif elementname == "memory":
+                        pass
+                        # mem_img = element.clone().abs().sum(2).view(element.size(0),1,1,element.size(1))
+
+                        # #grid = vutils.make_grid(mem_img, normalize=True, scale_each=False)
+                        # #self.tensorboard.add_image(str(self.outer_steps)+"memory"+str(ut_time), grid, ut_time)
+                        # if self.mem_save is False:
+                        #     self.mem_save = mem_img
+                        # else:
+                        #     self.mem_save = torch.cat((self.mem_save, mem_img),2)
+                        # if ut_time == self.num_hidden_layers -1:
+                        #     grid = vutils.make_grid(self.mem_save, normalize=True, scale_each=False)
+                        #     self.tensorboard.add_image(str(self.outer_steps)+"memory", grid, self.outer_steps)
+                            
+                        #     self.mem_save = False
+                    elif elementname == "usage":
+                        us_img = element.clone()
+                        usgrid = vutils.make_grid(us_img, normalize=True, scale_each=False)
+                        self.tensorboard.add_image(str(self.outer_steps)+"usage"+str(ut_time), usgrid, ut_time)
+                    else:
+                        self.tensorboard.add_histogram(str(self.outer_steps)+elementname, element.clone().cpu().data.numpy(), ut_time)
+
+                self.tensorboard.add_histogram(str(self.outer_steps)+"read_tokens", read_tokens[0].clone().abs().sum(1).cpu().data.numpy(), ut_time)
+                self.tensorboard.add_histogram(str(self.outer_steps)+"interpolation_gate", interpolation_gate[0].clone().cpu().data.numpy(), ut_time)
+                self.tensorboard.add_histogram(str(self.outer_steps)+"write_gate", write_gate[0].clone().cpu().data.numpy(), ut_time)
+                self.tensorboard.add_histogram(str(self.outer_steps)+"read_gate", read_gate[0].clone().cpu().data.numpy(), ut_time)
+
 
 
         return layer_output_p, gathered_mask
@@ -667,7 +709,7 @@ class BertEncoderDNC(nn.Module):
         all_encoder_layers = []
 
         for ut_time in range(self.hidden_layer_number):
-            erase_memory = False
+            erase_memory = True
             if ut_time == 0:
                 reset_memory = True
             else:

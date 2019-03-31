@@ -34,6 +34,8 @@ experiment = Experiment(api_key="zMVSRiUzF89hdX5u7uWrSW5og",
                         project_name="general", workspace="xirider")
 
 
+
+
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
                     level=logging.INFO)
@@ -504,6 +506,9 @@ def main():
     parser.add_argument("--read_gate",
                 action='store_true',
                 help="whether to use read gate")
+    parser.add_argument("--tensorboard",
+                action='store_true',
+                help="whether to track weights and memories in tensorboard")
 
     args = parser.parse_args()
 
@@ -511,6 +516,11 @@ def main():
     hyperparams = args.__dict__
 
     experiment.log_parameters(hyperparams)
+
+    if args.tensorboard:
+        from tensorboardX import SummaryWriter
+        writer = SummaryWriter()
+
 
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -738,6 +748,9 @@ def main():
             train_sampler = DistributedSampler(train_dataset)
         train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
 
+        if args.tensorboard:
+            model.ut.encoder.layer.inter_results = args.inter_results
+            model.ut.encoder.layer.tensorboard = writer
 
 
         
@@ -752,7 +765,10 @@ def main():
 
                 if step == lendata or step == lendata-1:
                     break
-                
+
+                if args.tensorboard:
+                    model.ut.encoder.layer.outer_steps = step
+
                 batch = tuple(t.to(device) for t in batch)
                 input_ids, input_mask, segment_ids, lm_label_ids  = batch
                 loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids)
@@ -807,7 +823,11 @@ def main():
                     joinedrealwords = " ".join(realwords)
                     print(joinedrealwords)
                     # print("memory of model:")
-                    # print(model.ut.encoder.layer.memory_hidden["memory"][0].abs().sum(1))
+                    if args.tensorboard:
+                        for name, param in model.ut.named_parameters():
+                            writer.add_histogram(name, param.clone().cpu().data.numpy(), step)
+                        
+                        # writer.add_histogram(model.ut.encoder.layer.memory_hidden["memory"][0].abs().sum(1))
 
 
 
@@ -815,20 +835,20 @@ def main():
                 nb_tr_examples += input_ids.size(0)
                 nb_tr_steps += 1
                 if (step + 1) % args.gradient_accumulation_steps == 0:
-                    if args.fp16:
-                        # modify learning rate with special warm up BERT uses
-                        # if args.fp16 is False, BertAdam is used that handles this automatically
-                        lr_this_step = args.learning_rate * warmup_linear(global_step/num_train_optimization_steps, args.warmup_proportion)
-                        hyperparams["learning_rate"] = lr_this_step
-                        for param_group in optimizer.param_groups:
-                            param_group['lr'] = lr_this_step
+                    # if args.fp16:
+                    #     # modify learning rate with special warm up BERT uses
+                    #     # if args.fp16 is False, BertAdam is used that handles this automatically
+                    #     lr_this_step = args.learning_rate * warmup_linear(global_step/num_train_optimization_steps, args.warmup_proportion)
+                    #     hyperparams["learning_rate"] = lr_this_step
+                    #     for param_group in optimizer.param_groups:
+                    #         param_group['lr'] = lr_this_step
                     optimizer.step()
                     optimizer.zero_grad()
                     experiment.log_metric("current_lr", optimizer.current_lr , step = step)
                     global_step += 1
                 
 
-
+        writer.close()
         # Save a trained model
         logger.info("** ** * Saving fine - tuned model ** ** * ")
 

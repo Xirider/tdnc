@@ -4,3 +4,4 @@ labada_data_intermediate/
 __pycache__
 checkpoints
 __pycache__/modeling.cpython-36.pyc
+runs/

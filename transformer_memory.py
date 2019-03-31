@@ -5,10 +5,25 @@ from torch.autograd import Variable as var
 import torch.nn.functional as F
 import numpy as np
 import math
+from torch import nn
 
 from util import *
 import time
 
+class BertLayerNorm(nn.Module):
+    def __init__(self, hidden_size, eps=1e-12):
+        """Construct a layernorm module in the TF style (epsilon inside the square root).
+        """
+        super(BertLayerNorm, self).__init__()
+        self.weight = nn.Parameter(T.ones(hidden_size))
+        self.bias = nn.Parameter(T.zeros(hidden_size))
+        self.variance_epsilon = eps
+
+    def forward(self, x):
+        u = x.mean(-1, keepdim=True)
+        s = (x - u).pow(2).mean(-1, keepdim=True)
+        x = (x - u) / T.sqrt(s + self.variance_epsilon)
+        return self.weight * x + self.bias
 
 class SparseMemory(nn.Module):
 
@@ -25,7 +40,8 @@ class SparseMemory(nn.Module):
       gpu_id=-1,
       mem_gpu_id=-1,
       direct_write=False,
-      read_gate=False
+      read_gate=False,
+      read_strength = True
       #x added direct write, independent false
   ):
     super(SparseMemory, self).__init__()
@@ -57,39 +73,45 @@ class SparseMemory(nn.Module):
     m = self.mem_size
     w = self.cell_size
     r = self.read_heads
+    self.read_strength = read_strength
+    self.spiky = 500000
     # The visible memory size: (K * R read heads, and least used memory cell)
     self.c = (self.K * r) + 1
 
-    if self.independent_linears:
-      if self.gpu_id != -1:
-        self.read_query_transform = nn.Linear(self.input_size, w * r).cuda()
-        self.write_vector_transform = nn.Linear(self.input_size, w).cuda()
-        self.interpolation_gate_transform = nn.Linear(self.input_size, self.c).cuda()
-        self.write_gate_transform = nn.Linear(self.input_size, 1).cuda()
-      else:
-        self.read_query_transform = nn.Linear(self.input_size, w * r)
-        self.write_vector_transform = nn.Linear(self.input_size, w)
-        self.interpolation_gate_transform = nn.Linear(self.input_size, self.c)
-        self.write_gate_transform = nn.Linear(self.input_size, 1)
-      T.nn.init.orthogonal(self.read_query_transform.weight)
-      T.nn.init.orthogonal(self.write_vector_transform.weight)
-      T.nn.init.orthogonal(self.interpolation_gate_transform.weight)
-      T.nn.init.orthogonal(self.write_gate_transform.weight)
-    else:
+    # if self.independent_linears:
+    #   if self.gpu_id != -1:
+    #     self.read_query_transform = nn.Linear(self.input_size, w * r).cuda()
+    #     self.write_vector_transform = nn.Linear(self.input_size, w).cuda()
+    #     self.interpolation_gate_transform = nn.Linear(self.input_size, self.c).cuda()
+    #     self.write_gate_transform = nn.Linear(self.input_size, 1).cuda()
+    #   else:
+    #     self.read_query_transform = nn.Linear(self.input_size, w * r)
+    #     self.write_vector_transform = nn.Linear(self.input_size, w)
+    #     self.interpolation_gate_transform = nn.Linear(self.input_size, self.c)
+    #     self.write_gate_transform = nn.Linear(self.input_size, 1)
+    #   T.nn.init.orthogonal(self.read_query_transform.weight)
+    #   T.nn.init.orthogonal(self.write_vector_transform.weight)
+    #   T.nn.init.orthogonal(self.interpolation_gate_transform.weight)
+    #   T.nn.init.orthogonal(self.write_gate_transform.weight)
+    # else:
       #x depending on directly writing or not, create enough outputs
-      if self.direct_write:
-        #x read query w, sparse read plus lru gates, write gate
-        self.interface_size = (w * r) + 1+ 1
-      else:
-        #x with addition write vector calculation
-        self.interface_size = (w * r) + w + 1 + 1
-      if self.read_gate:
-        self.interface_size += 1
-      if self.gpu_id != -1:
-        self.interface_weights = nn.Linear(self.input_size, self.interface_size).cuda()
-      else:
-        self.interface_weights = nn.Linear(self.input_size, self.interface_size)
-      T.nn.init.orthogonal_(self.interface_weights.weight)
+    if self.direct_write:
+      #x read query w, sparse read plus lru gates, write gate
+      self.interface_size = (w * r) + 1+ 1
+    else:
+      #x with addition write vector calculation
+      self.interface_size = (w * r) + w + 1 + 1
+    if self.read_gate:
+      self.interface_size += 1
+    if self.read_strength:
+      self.interface_size +=1
+    if self.gpu_id != -1:
+      self.interface_weights = nn.Linear(self.input_size, self.interface_size).cuda()
+      self.layernorm = BertLayerNorm(self.interface_size - 1 if self.read_strength else self.interface_size).cuda()
+    else:
+      self.interface_weights = nn.Linear(self.input_size, self.interface_size)
+      self.layernorm = BertLayerNorm(self.interface_size)
+    T.nn.init.orthogonal_(self.interface_weights.weight)
 
     # creates and 5x5 identitiy
     self.I = cuda(1 - T.eye(self.c).unsqueeze(0), gpu_id=self.gpu_id)  # (1 * n * n)
@@ -158,7 +180,6 @@ class SparseMemory(nn.Module):
           
           "visible_memory": cuda(T.zeros(b, c, w).fill_(δ), gpu_id=self.mem_gpu_id),
 
-          "write_weights": cuda(T.zeros(b, s).fill_(δ), gpu_id=self.gpu_id).contiguous(),
           "read_vectors": cuda(T.zeros(b, r, w).fill_(δ), gpu_id=self.gpu_id).contiguous(),
           #n need to add one place for each readhead instead of just 1
           "least_used_mem": cuda(T.arange(0, s).expand(b, s), gpu_id=self.gpu_id).long().contiguous(),
@@ -173,7 +194,6 @@ class SparseMemory(nn.Module):
     elif not erase:
       hidden["memory"] = hidden["memory"].clone().detach()
       hidden["visible_memory"] = hidden["visible_memory"].clone().detach()
-      hidden["write_weights"] = hidden["write_weights"].clone().contiguous().detach()
       hidden["read_vectors"] = hidden["read_vectors"].clone().contiguous().detach()
       hidden["least_used_mem"] = hidden["least_used_mem"].clone().contiguous().detach()
       hidden["usage"] = hidden["usage"].clone().contiguous().detach() / (self.timestep +1)
@@ -190,7 +210,6 @@ class SparseMemory(nn.Module):
           
           "visible_memory": cuda(T.zeros(b, c, w).fill_(δ), gpu_id=self.mem_gpu_id),
 
-          "write_weights": cuda(T.zeros(b, s).fill_(δ), gpu_id=self.gpu_id).contiguous(),
           "read_vectors": cuda(T.zeros(b, r, w).fill_(δ), gpu_id=self.gpu_id).contiguous(),
           #n need to add one place for each readhead instead of just 1
           "least_used_mem": cuda(T.arange(0, s).expand(b, s), gpu_id=self.gpu_id).long().contiguous(),
@@ -302,7 +321,10 @@ class SparseMemory(nn.Module):
 
     new_mask = attention_mask.unsqueeze(2).expand(self.b, self.s, self.vis_size).float()
 
-    write_weights = write_weights * new_mask
+    no_write = hidden["read_positions"] != 0
+    no_write = no_write.unsqueeze(1).expand(self.b, self.s, self.vis_size).float()
+    
+    write_weights = write_weights * new_mask * no_write
 
     if self.print_tensors: print(f"write_weight: {write_weights}")
     # store the write weights
@@ -316,15 +338,14 @@ class SparseMemory(nn.Module):
     if self.print_tensors: print(f"write vector {write_vector}")
     #write_weights[0].fill_(55)
     # returns something illogical, maybe expand and just do a standard multiplyn
+    #n need to check
     writings = T.matmul(write_weights.unsqueeze(3), write_vector)
     if self.print_tensors: print(f"writings before sum {writings}")
     writings = T.sum(writings, dim=1)
+
     if self.print_tensors: print(f"writings after sum {writings}")
     # write into memory
     hidden["visible_memory"] = (hidden["visible_memory"] * (1 - erase_matrix)) + writings
-
-    abc = hidden["visible_memory"]
-    if self.print_tensors: print(f"visible memory {abc}")
     
     
     hidden = self.write_into_sparse_memory(hidden)
@@ -391,7 +412,6 @@ class SparseMemory(nn.Module):
     #read_positions = T.tensor([[ 0,  3,  4,  9, 10], [0,0,0,0,0],[0,0,0,0,0 ],[ 0,0,0,0,0]])
     #usage = usage.clone().contiguous()
     # bug in pytorch when not calling contigous on scattered tensor
-
     usage.scatter_(dim = 1, index= read_positions, src= relevant_usages)
 
 
@@ -423,7 +443,6 @@ class SparseMemory(nn.Module):
 
     read_positions = T.stack(read_positions, 0)
 
-    
 
     if self.print_tensors: print("read positions")
     if self.print_tensors: print(read_positions.size())
@@ -457,8 +476,17 @@ class SparseMemory(nn.Module):
     if self.print_tensors: print(read_positions)
     read_positions = read_positions.view(b, -1)
     # deduplicate all read positions
+    read_chunks = T.chunk(read_positions, b, dim=0)
+    unique_chunks = []
+    #chunk_max = 0
+    for batches in range(b):
+      chunk = T.unique(read_chunks[batches], sorted=False)
+      unique_chunks.append(chunk)
+      # chunk_max = max(chunk_max,len(chunk))
+    # read_positions = T.stack(unique_chunks, 0)
+    read_positions = nn.utils.rnn.pad_sequence(unique_chunks,batch_first=True)
 
-    read_positions = torch.unique(read_positions, sorted=False, dim=1)
+    # read_positions = torch.unique(read_positions, sorted=False, dim=1)
     self.vis_size = read_positions.size(1)
     
     #expand to get all the w dimension locations
@@ -470,7 +498,19 @@ class SparseMemory(nn.Module):
     # take the vectors of the sparse reads and lru and let the read heads each look for the most similiar vector, then do softmax among all the vectors
     # for each head (b x r x (r*k + lru))
     # output shape (b x r x m), where m = r * K + 1
-    read_weights = σ(θ(visible_memory, keys), 2)
+    
+
+    # ke = keys.abs().sum(2)
+    # vis = visible_memory.abs().sum(2)
+    #cosinedistance2 =  deepmindcosine(keys, visible_memory)
+    #import pdb; pdb.set_trace()
+    cosinedistance = θ(visible_memory, keys) * self.spiky * self.saved_read_strength
+    print(self.saved_read_strength[0].sum(0))
+    # read_weights = σ(cosinedistance, 2)
+    # import pdb; pdb.set_trace()
+    #cosinedistance = 
+    read_weights =nn.functional.softmax(cosinedistance, dim=2)
+    # import pdb; pdb.set_trace()
     # let each head return one vector based on the previous softmax (b x r x w)
     # mask out the padding tokens
     new_mask = attention_mask.unsqueeze(2).expand(b, self.s, self.vis_size).float()
@@ -535,6 +575,13 @@ class SparseMemory(nn.Module):
     #   write_gate = F.sigmoid(self.write_gate_transform(ξ).view(b, 1))
     # else:
     ξ = self.interface_weights(e)
+
+    if self.read_strength and self.read_gate:
+      self.saved_read_strength = T.sigmoid(ξ[:, :, -3].contiguous()).view(b, s, 1) 
+      ξ = T.cat([ξ[:,:, :-3], ξ[:,:,-2:]],2 )
+
+    ξ = self.layernorm(ξ)
+
     # r read keys (b * r * w)
     read_query = ξ[:, :, :r * w].contiguous().view(b, s, r, w)
     # write key (b * 1 * w)
@@ -554,6 +601,9 @@ class SparseMemory(nn.Module):
       write_gate = T.sigmoid(ξ[:, :, -1].contiguous()).view(b, s, 1)
     if self.read_gate:
       read_gate = T.sigmoid(ξ[:, :, -2].contiguous()).view(b, s, 1)
+
+    else:
+      read_gate = None
     self.timestep += 1
     #x changed order to first read then write
     read_vectors, hidden = self.read(read_query, hidden, attention_mask)
@@ -562,6 +612,6 @@ class SparseMemory(nn.Module):
     if self.read_gate:
       read_vectors = read_vectors * read_gate.expand(b,s,w)
 
-    return read_vectors, hidden
+    return read_vectors, hidden, interpolation_gate, write_gate, read_gate
     # hidden = self.write(interpolation_gate, write_vector, write_gate, hidden)
     # return self.read(read_query, hidden)

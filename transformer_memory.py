@@ -74,7 +74,7 @@ class SparseMemory(nn.Module):
     w = self.cell_size
     r = self.read_heads
     self.read_strength = read_strength
-    self.spiky = 10000
+    self.spiky = 100000
     # The visible memory size: (K * R read heads, and least used memory cell)
     self.c = (self.K * r) + 1
 
@@ -580,7 +580,7 @@ class SparseMemory(nn.Module):
       self.saved_read_strength = T.sigmoid(ξ[:, :, -3].contiguous()).view(b, s, 1) 
       ξ = T.cat([ξ[:,:, :-3], ξ[:,:,-2:]],2 )
 
-    ξ = self.layernorm(ξ)
+    #ξ = self.layernorm(ξ)
 
     # r read keys (b * r * w)
     read_query = ξ[:, :, :r * w].contiguous().view(b, s, r, w)

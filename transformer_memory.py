@@ -74,8 +74,8 @@ class SparseMemory(nn.Module):
     w = self.cell_size
     r = self.read_heads
     self.read_strength = read_strength
-    #self.spiky = 50000
-    self.spiky = 500000
+    self.spiky = 50000
+    #self.spiky = 500000
     # The visible memory size: (K * R read heads, and least used memory cell)
     self.c = (self.K * r) + 1
 
@@ -505,7 +505,7 @@ class SparseMemory(nn.Module):
     # vis = visible_memory.abs().sum(2)
     #cosinedistance2 =  deepmindcosine(keys, visible_memory)
     #import pdb; pdb.set_trace()
-    cosinedistance = θ(visible_memory, keys) * self.spiky#* T.pow(100, self.saved_read_strength)
+    cosinedistance = θ(visible_memory, keys) * self.spiky* T.pow(100, self.saved_read_strength)
     #cosinedistance = θ(visible_memory, keys) * T.pow(self.spiky, self.saved_read_strength)
     # read_weights = σ(cosinedistance, 2)
     # import pdb; pdb.set_trace()

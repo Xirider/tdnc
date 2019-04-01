@@ -709,7 +709,7 @@ class BertEncoderDNC(nn.Module):
         all_encoder_layers = []
 
         for ut_time in range(self.hidden_layer_number):
-            erase_memory = False
+            erase_memory = True
             if ut_time == 0:
                 reset_memory = True
             else:

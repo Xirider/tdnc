@@ -74,7 +74,7 @@ class SparseMemory(nn.Module):
     w = self.cell_size
     r = self.read_heads
     self.read_strength = read_strength
-    self.spiky = 500000
+    self.spiky = 100000
     # The visible memory size: (K * R read heads, and least used memory cell)
     self.c = (self.K * r) + 1
 

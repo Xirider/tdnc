@@ -828,7 +828,7 @@ def main():
                             writer.add_histogram(name, param.clone().cpu().data.numpy(), step)
                         
                         # writer.add_histogram(model.ut.encoder.layer.memory_hidden["memory"][0].abs().sum(1))
-
+                    print(model.ut.encoder.layer.inter_results.memory.saved_read_strength[0].sum(0))
 
 
 

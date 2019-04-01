@@ -1274,6 +1274,8 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
             self.dropout = nn.Dropout(config.hidden_dropout_prob)
             self.mask_token_number = config.mask_token_number
             self.use_mask_embeddings = True
+            self.mask_positions = False
+            self.create_masks = True
         else:
             self.use_mask_embeddings = False
         self.encoder = BertEncoderDNC(config)
@@ -1306,20 +1308,20 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
 
         #extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
 
-
-        mask_positions = torch.eq(input_ids, self.mask_token_number)
+        if self.create_masks:
+            self.mask_positions = torch.eq(input_ids, self.mask_token_number)
 
 
         
         if self.use_mask_embeddings:
-            mask_inter = torch.as_tensor(mask_positions, dtype = torch.long, device = input_tokens.device)
+            mask_inter = torch.as_tensor(self.mask_positions, dtype = torch.long, device = input_tokens.device)
             mask_out = self.mask_embedding(mask_inter)
             mask_out = self.dropout(mask_out)
             input_tokens = input_tokens + mask_out
 
         encoded_layers = self.encoder(input_tokens, attention_mask,
                                       input_number = input_number, total_tokens=total_tokens, 
-                                      mask_positions=mask_positions, output_all_encoded_layers=output_all_encoded_layers)
+                                      mask_positions=self.mask_positions, output_all_encoded_layers=output_all_encoded_layers)
         sequence_output = encoded_layers[-1]
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]

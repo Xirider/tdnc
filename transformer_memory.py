@@ -509,6 +509,7 @@ class SparseMemory(nn.Module):
     # import pdb; pdb.set_trace()
     #cosinedistance = 
     read_weights =nn.functional.softmax(cosinedistance, dim=2)
+    self.saved_read_softmax = read_weights[0][10]
     # import pdb; pdb.set_trace()
     # let each head return one vector based on the previous softmax (b x r x w)
     # mask out the padding tokens

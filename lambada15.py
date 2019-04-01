@@ -828,8 +828,15 @@ def main():
                             writer.add_histogram(name, param.clone().cpu().data.numpy(), step)
                         
                         # writer.add_histogram(model.ut.encoder.layer.memory_hidden["memory"][0].abs().sum(1))
-                    print(model.ut.encoder.layer.memory.saved_read_strength[0].sum(0))
-
+                    print(model.ut.encoder.layer.memory.saved_read_strength[0].mean(0))
+                    print("Softmax distribution over 5 %")
+                    print((model.ut.encoder.layer.memory.saved_read_softmax > 0.05).sum())
+                    print("Softmax distribution over 50 %")
+                    print((model.ut.encoder.layer.memory.saved_read_softmax > 0.5).sum())
+                    print("Softmax distribution over 99 %")
+                    print((model.ut.encoder.layer.memory.saved_read_softmax > 0.99).sum())
+                    print("Softmax distribution over 99,999 %")
+                    print((model.ut.encoder.layer.memory.saved_read_softmax > 0.99999).sum())
 
 
                 nb_tr_examples += input_ids.size(0)

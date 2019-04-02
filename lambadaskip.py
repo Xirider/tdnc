@@ -773,7 +773,7 @@ def main():
                 input_ids, input_mask, segment_ids, lm_label_ids  = batch
                 if step % 2 == 0:
                     model.ut.create_masks = True
-                    _, _ = model(input_ids, segment_ids, input_mask, lm_label_ids)
+                    _, _ = model(input_ids, segment_ids, input_mask, lm_label_ids , reset_memory=True, erase_memory=True)
 
                     safed_input_mask = input_mask
                     safed_lm_label_ids = lm_label_ids
@@ -783,7 +783,7 @@ def main():
                     model.ut.create_masks = False
                     input_mask = safed_input_mask
                     lm_label_ids = safed_lm_label_ids
-                    loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids)
+                    loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=False, erase_memory=False)
                     if n_gpu > 1:
                         loss = loss.mean() # mean() to average on multi-gpu.
                     if args.gradient_accumulation_steps > 1:
@@ -792,8 +792,7 @@ def main():
                         optimizer.backward(loss)
                     else:
                         loss.backward()
-
-                # Metrics
+                
                     losscpu = loss.item()
                     print(f"Step {step} loss: {losscpu} ")
                     experiment.log_metric("loss", losscpu, step = step)
@@ -903,7 +902,7 @@ def main():
                     input_ids, input_mask, segment_ids, lm_label_ids  = batch
                     if step % 2 == 0:
                         model.ut.create_masks = True
-                        _, _ = model(input_ids, segment_ids, input_mask, lm_label_ids)
+                        _, _ = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=True, erase_memory=True)
 
                         safed_input_mask = input_mask
                         safed_lm_label_ids = lm_label_ids
@@ -913,7 +912,7 @@ def main():
                         model.ut.create_masks = False
                         input_mask = safed_input_mask
                         lm_label_ids = safed_lm_label_ids
-                        loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids)
+                        loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=True, erase_memory=True)
                         if n_gpu > 1:
                             loss = loss.mean() # mean() to average on multi-gpu.
                         if args.gradient_accumulation_steps > 1:

@@ -521,6 +521,7 @@ class BertLayerDNC(nn.Module):
     def forward(self, hidden_states, attention_mask, ut_time, input_number, total_tokens, mask_positions, reset_memory, erase_memory):
         #import pdb; pdb.set_trace()
         batch_size , token_number, _ = hidden_states.size()
+        import pdb; pdb.set_trace()
         if reset_memory:
             self.memory_hidden = self.memory.reset(batch_size, token_number, self.memory_hidden, erase= erase_memory)
         # use sam to read and write tokens, input mask to show dnc which positions should not read and write
@@ -705,17 +706,14 @@ class BertEncoderDNC(nn.Module):
         self.hidden_layer_number = config.num_hidden_layers
         #self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
 
-    def forward(self, hidden_states, attention_mask, input_number, total_tokens, mask_positions, output_all_encoded_layers=True):
+    def forward(self, hidden_states, attention_mask, input_number, total_tokens, mask_positions, reset_memory, erase_memory, output_all_encoded_layers=True):
         all_encoder_layers = []
 
         for ut_time in range(self.hidden_layer_number):
-            erase_memory = True
-            if ut_time == 0:
-                reset_memory = True
-            else:
-                reset_memory = False
+
             hidden_states, attention_mask = self.layer(hidden_states, attention_mask, ut_time, input_number = input_number, total_tokens=total_tokens, 
                                             mask_positions=mask_positions, reset_memory=reset_memory, erase_memory= erase_memory)
+            reset_memory = False
 
             if output_all_encoded_layers:
                 all_encoder_layers.append(hidden_states)
@@ -1283,7 +1281,8 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
 
 
 
-    def forward(self, input_tokens, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
+    def forward(self, input_tokens, input_ids, token_type_ids=None, attention_mask=None,
+                reset_memory=False, erase_memory=False, output_all_encoded_layers=True):
         if attention_mask is None:
             attention_mask = torch.ones_like(input_tokens)
         if token_type_ids is None:
@@ -1321,7 +1320,8 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
 
         encoded_layers = self.encoder(input_tokens, attention_mask,
                                       input_number = input_number, total_tokens=total_tokens, 
-                                      mask_positions=self.mask_positions, output_all_encoded_layers=output_all_encoded_layers)
+                                      mask_positions=self.mask_positions, reset_memory=reset_memory, 
+                                      erase_memory= erase_memory, output_all_encoded_layers=output_all_encoded_layers)
         sequence_output = encoded_layers[-1]
         if not output_all_encoded_layers:
             encoded_layers = encoded_layers[-1]
@@ -1629,10 +1629,10 @@ class TDNCafterBert(BertPreTrainedModel):
         self.cls = BertOnlyMLMHead(config, self.bert.embeddings.word_embeddings.weight)
         self.apply(self.init_bert_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None):
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None, reset_memory =False, erase_memory=False):
         bert_tokens, _ = self.bert(input_ids, token_type_ids, attention_mask,
                                        output_all_encoded_layers=False)
-        sequence_output = self.ut(bert_tokens, input_ids, token_type_ids, attention_mask,
+        sequence_output = self.ut(bert_tokens, input_ids, token_type_ids, attention_mask, reset_memory=reset_memory, erase_memory= erase_memory,
                                        output_all_encoded_layers=False)
         
         prediction_scores = self.cls(sequence_output)

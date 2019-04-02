@@ -521,7 +521,7 @@ class BertLayerDNC(nn.Module):
     def forward(self, hidden_states, attention_mask, ut_time, input_number, total_tokens, mask_positions, reset_memory, erase_memory):
         #import pdb; pdb.set_trace()
         batch_size , token_number, _ = hidden_states.size()
-        import pdb; pdb.set_trace()
+
         if reset_memory:
             self.memory_hidden = self.memory.reset(batch_size, token_number, self.memory_hidden, erase= erase_memory)
         # use sam to read and write tokens, input mask to show dnc which positions should not read and write

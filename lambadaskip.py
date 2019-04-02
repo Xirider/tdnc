@@ -814,7 +814,7 @@ def main():
                     experiment.log_metric("accuracy_ema", acc_ema , step = step)
 
 
-                    if step % args.inter_results == 0:
+                    if step % args.inter_results == 1:
 
                         with torch.no_grad():
                             predictions = predictions[0]

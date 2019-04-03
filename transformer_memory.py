@@ -579,7 +579,7 @@ class SparseMemory(nn.Module):
     ξ = self.interface_weights(e)
 
     if self.read_strength and self.read_gate:
-      self.saved_read_strength = T.sigmoid(ξ[:, :, -3].contiguous()).view(b, s, 1) 
+      self.saved_read_strength = ξ[:, :, -3].contiguous().view(b, s, 1) 
       ξ = T.cat([ξ[:,:, :-3], ξ[:,:,-2:]],2 )
 
     ξ = self.layernorm(ξ)

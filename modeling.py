@@ -1276,6 +1276,8 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
             self.create_masks = True
         else:
             self.use_mask_embeddings = False
+        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
+
         self.encoder = BertEncoderDNC(config)
         self.apply(self.init_bert_weights)
 
@@ -1310,13 +1312,18 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
         if self.create_masks:
             self.mask_positions = torch.eq(input_ids, self.mask_token_number)
 
-
+        position_ids = torch.arange(total_tokens, dtype=torch.long, device=input_tokens.device)
+        position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
+        position_embeddings = self.position_embeddings(position_ids)
         
         if self.use_mask_embeddings:
             mask_inter = torch.as_tensor(self.mask_positions, dtype = torch.long, device = input_tokens.device)
             mask_out = self.mask_embedding(mask_inter)
             mask_out = self.dropout(mask_out)
             input_tokens = input_tokens + mask_out
+
+        input_tokens = input_tokens + position_embeddings
+
 
         encoded_layers = self.encoder(input_tokens, attention_mask,
                                       input_number = input_number, total_tokens=total_tokens, 

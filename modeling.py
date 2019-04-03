@@ -148,7 +148,7 @@ class BertConfig(object):
                  attention_probs_dropout_prob=0.1,
                  max_position_embeddings=512,
                  type_vocab_size=2,
-                 initializer_range=0.02,
+                 initializer_range=0.051,
                  use_mask_embeddings=True,
                  use_temporal_embeddings=True,
                  mask_token_number = 103,
@@ -1280,6 +1280,7 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
 
         self.encoder = BertEncoderDNC(config)
         self.apply(self.init_bert_weights)
+        nn.init.orthogonal_(self.encoder.layer.memory.interface_weights.weight)
 
 
 
@@ -1635,6 +1636,7 @@ class TDNCafterBert(BertPreTrainedModel):
         self.ut = BertModelDNCNoEmbedding(config_ut)
         self.cls = BertOnlyMLMHead(config, self.bert.embeddings.word_embeddings.weight)
         self.apply(self.init_bert_weights)
+        nn.init.orthogonal_(self.ut.encoder.layer.memory.interface_weights.weight)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None, reset_memory =False, erase_memory=False):
         bert_tokens, _ = self.bert(input_ids, token_type_ids, attention_mask,

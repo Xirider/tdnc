@@ -148,7 +148,7 @@ class BertConfig(object):
                  attention_probs_dropout_prob=0.1,
                  max_position_embeddings=512,
                  type_vocab_size=2,
-                 initializer_range=0.051,
+                 initializer_range=0.02,
                  use_mask_embeddings=True,
                  use_temporal_embeddings=True,
                  mask_token_number = 103,

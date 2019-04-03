@@ -148,7 +148,7 @@ class BertConfig(object):
                  attention_probs_dropout_prob=0.1,
                  max_position_embeddings=512,
                  type_vocab_size=2,
-                 initializer_range=0.02,
+                 initializer_range=0.051,
                  use_mask_embeddings=True,
                  use_temporal_embeddings=True,
                  mask_token_number = 103,
@@ -1179,6 +1179,7 @@ class BertModelUtNoEmbedding(BertPreTrainedModel):
         else:
             self.use_mask_embeddings = False
         self.encoder = BertEncoderUt(config)
+        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
         self.apply(self.init_bert_weights)
 
 
@@ -1189,6 +1190,9 @@ class BertModelUtNoEmbedding(BertPreTrainedModel):
         if token_type_ids is None:
             token_type_ids = torch.zeros_like(input_tokens)
 
+        input_number = torch.sum(attention_mask, dim=1)
+        # max length after padding
+        total_tokens = attention_mask.size(1)
         # We create a 3D attention mask from a 2D tensor mask.
         # Sizes are [batch_size, 1, 1, to_seq_length]
         # So we can broadcast to [batch_size, num_heads, from_seq_length, to_seq_length]
@@ -1204,6 +1208,11 @@ class BertModelUtNoEmbedding(BertPreTrainedModel):
         extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
 
+        position_ids = torch.arange(total_tokens, dtype=torch.long, device=input_tokens.device)
+        position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
+        position_embeddings = self.position_embeddings(position_ids)
+
+
         
         if self.use_mask_embeddings:
             mask_in = torch.eq(input_ids, self.mask_token_number)
@@ -1211,6 +1220,9 @@ class BertModelUtNoEmbedding(BertPreTrainedModel):
             mask_out = self.mask_embedding(mask_in)
             mask_out = self.dropout(mask_out)
             input_tokens = input_tokens + mask_out
+
+        input_tokens = input_tokens + position_embeddings
+
 
         encoded_layers = self.encoder(input_tokens,
                                       extended_attention_mask,
@@ -1280,7 +1292,7 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
 
         self.encoder = BertEncoderDNC(config)
         self.apply(self.init_bert_weights)
-        nn.init.orthogonal_(self.encoder.layer.memory.interface_weights.weight)
+        #nn.init.orthogonal_(self.encoder.layer.memory.interface_weights.weight)
 
 
 
@@ -1636,7 +1648,7 @@ class TDNCafterBert(BertPreTrainedModel):
         self.ut = BertModelDNCNoEmbedding(config_ut)
         self.cls = BertOnlyMLMHead(config, self.bert.embeddings.word_embeddings.weight)
         self.apply(self.init_bert_weights)
-        nn.init.orthogonal_(self.ut.encoder.layer.memory.interface_weights.weight)
+        #nn.init.orthogonal_(self.ut.encoder.layer.memory.interface_weights.weight)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None, reset_memory =False, erase_memory=False):
         bert_tokens, _ = self.bert(input_ids, token_type_ids, attention_mask,

@@ -712,7 +712,7 @@ class BertLayerAddDNC(nn.Module):
 
 
 
-        return layer_output_p, attention_mask
+        return layer_output, attention_mask
 
 def fill_list(top, mask_positions):
     # keeps mask indices original and fills the rest of the position with topk indices

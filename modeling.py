@@ -156,7 +156,8 @@ class BertConfig(object):
                  sum_type = "sum",
                  memory_size = 512,
                  direct_write=False,
-                 read_gate=True):
+                 read_gate=True,
+                 read_token_type="concat"):
         """Constructs BertConfig.
 
         Args:
@@ -207,6 +208,7 @@ class BertConfig(object):
             self.memory_size = memory_size
             self.direct_write = direct_write
             self.read_gate = read_gate
+            self.read_token_type = read_token_type
 
         else:
             raise ValueError("First argument must be either a vocabulary size (int)"
@@ -383,7 +385,7 @@ class BertAttention(nn.Module):
 class BertAttentionUt(nn.Module):
     def __init__(self, config):
         super(BertAttentionUt, self).__init__()
-        self.temporal_embedding = nn.Embedding(config.num_hidden_layers, config.hidden_size)
+        self.temporal_embedding = nn.Embedding(max(config.num_hidden_layers, 10), config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.self = BertSelfAttention(config)
         self.output = BertSelfOutput(config)
@@ -618,6 +620,100 @@ class BertLayerDNC(nn.Module):
 
         return layer_output_p, gathered_mask
 
+
+class BertLayerAddDNC(nn.Module):
+    def __init__(self, config, scale_original_tokens = True):
+        super(BertLayerAddDNC, self).__init__()
+        self.gpu_id = 0
+        self.memory = SparseMemory(input_size= config.hidden_size, mem_size=config.memory_size, cell_size=config.hidden_size,
+         independent_linears=False, read_heads=1, sparse_reads=4, num_lists=None, index_checks=None, 
+         gpu_id=self.gpu_id, mem_gpu_id=self.gpu_id, direct_write=config.direct_write, read_gate=config.read_gate)
+
+        self.attention = BertAttentionUt(config)
+        self.intermediate = BertIntermediate(config)
+        self.output = BertOutput(config)
+        self.max_comp_length = config.max_comp_length
+        self.memory_hidden = None
+        self.sum_type = config.sum_type
+
+        self.tensorboard = False
+        self.outer_steps = 0
+        self.inter_results = 0
+        self.mem_save = False
+        self.usage_save = False
+        self.num_hidden_layers = config.num_hidden_layers
+
+        self.scale_original_tokens = scale_original_tokens
+        
+        if self.scale_original_tokens:
+            self.hidden_gate = nn.Linear(config.hidden_size, 1)
+
+    def forward(self, hidden_states, attention_mask, ut_time, input_number, total_tokens, mask_positions, reset_memory, erase_memory):
+        #import pdb; pdb.set_trace()
+        batch_size , token_number, units = hidden_states.size()
+
+        if reset_memory:
+            self.memory_hidden = self.memory.reset(batch_size, token_number, self.memory_hidden, erase= erase_memory)
+        # use sam to read and write tokens, input mask to show dnc which positions should not read and write
+        read_tokens, self.memory_hidden, interpolation_gate, write_gate, read_gate = self.memory(hidden_states, self.memory_hidden, attention_mask = attention_mask)
+
+        if scale_original_tokens:
+            hidden_states = self.hidden_gate(hidden_states).expand(batch_size, token_number, units) * hidden_states
+        # add tokens
+        hidden_states = hidden_states + read_tokens
+
+        # modify attention mask to include newly read tokens
+        # reads_pos = torch.cat([torch.ones_like(attention_mask, dtype=torch.long),torch.zeros_like(attention_mask, dtype=torch.long)],dim=1)
+        #attention_mask = torch.cat([attention_mask, attention_mask], dim=1)
+        # add read token embedding to all newly read tokens
+
+        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+        extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype)
+
+        attention_output = self.attention(hidden_states, extended_attention_mask, ut_time) #attention mask needs to be updated
+        intermediate_output = self.intermediate(attention_output)
+        layer_output = self.output(intermediate_output, attention_output)
+
+        # put
+
+        if self.tensorboard:
+            if self.outer_steps % self.inter_results == 0:
+                for elementname, element in self.memory_hidden.items():
+                    if elementname == "indexes":
+                        pass
+
+                    elif elementname == "memory":
+                        pass
+                        # mem_img = element.clone().abs().sum(2).view(element.size(0),1,1,element.size(1))
+
+                        # #grid = vutils.make_grid(mem_img, normalize=True, scale_each=False)
+                        # #self.tensorboard.add_image(str(self.outer_steps)+"memory"+str(ut_time), grid, ut_time)
+                        # if self.mem_save is False:
+                        #     self.mem_save = mem_img
+                        # else:
+                        #     self.mem_save = torch.cat((self.mem_save, mem_img),2)
+                        # if ut_time == self.num_hidden_layers -1:
+                        #     grid = vutils.make_grid(self.mem_save, normalize=True, scale_each=False)
+                        #     self.tensorboard.add_image(str(self.outer_steps)+"memory", grid, self.outer_steps)
+                            
+                        #     self.mem_save = False
+                    elif elementname == "usage":
+                        us_img = element.clone()
+                        usgrid = vutils.make_grid(us_img, normalize=True, scale_each=False)
+                        self.tensorboard.add_image(str(self.outer_steps)+"usage"+str(ut_time), usgrid, ut_time)
+                    else:
+                        self.tensorboard.add_histogram(str(self.outer_steps)+elementname, element.clone().cpu().data.numpy(), ut_time)
+
+                self.tensorboard.add_histogram(str(self.outer_steps)+"read_tokens", read_tokens[0].clone().abs().sum(1).cpu().data.numpy(), ut_time)
+                self.tensorboard.add_histogram(str(self.outer_steps)+"interpolation_gate", interpolation_gate[0].clone().cpu().data.numpy(), ut_time)
+                self.tensorboard.add_histogram(str(self.outer_steps)+"write_gate", write_gate[0].clone().cpu().data.numpy(), ut_time)
+                self.tensorboard.add_histogram(str(self.outer_steps)+"read_gate", read_gate[0].clone().cpu().data.numpy(), ut_time)
+
+
+
+        return layer_output_p, attention_mask
+
 def fill_list(top, mask_positions):
     # keeps mask indices original and fills the rest of the position with topk indices
     b,n = mask_positions.size()
@@ -635,20 +731,20 @@ def fill_list(top, mask_positions):
         final_list.append(curr_batch_list)
     return final_list
 
-def fill_list_1d(top, mask_positions):
-    # keeps mask indices original and fills the rest of the position with topk indices
-    b,n = mask_positions.size()
-    mask_pos = mask_positions.clone().tolist()
-    toplist = top.clone().tolist()
-    final_list = []
-    for batch in range(b):
-        tp = iter(toplist[batch])
-        for i, mask in enumerate(mask_pos[batch]):
-            if mask:
-                final_list.append([batch, i])
-            else:
-                final_list.append([batch, next(tp)])
-    return final_list
+# def fill_list_1d(top, mask_positions):
+#     # keeps mask indices original and fills the rest of the position with topk indices
+#     b,n = mask_positions.size()
+#     mask_pos = mask_positions.clone().tolist()
+#     toplist = top.clone().tolist()
+#     final_list = []
+#     for batch in range(b):
+#         tp = iter(toplist[batch])
+#         for i, mask in enumerate(mask_pos[batch]):
+#             if mask:
+#                 final_list.append([batch, i])
+#             else:
+#                 final_list.append([batch, next(tp)])
+#     return final_list
 
 
 class BertEncoder(nn.Module):
@@ -696,13 +792,16 @@ class BertEncoderUt(nn.Module):
 class BertEncoderDNC(nn.Module):
     def __init__(self, config):
         super(BertEncoderDNC, self).__init__()
-        if config.use_temporal_embeddings:
+        if config.read_token_type == "concat":
             self.layer = BertLayerDNC(config)
-            self.use_temporal_embeddings = True
-        else:
-            self.layer = BertLayer(config)
-            print("not implemented")
-            self.use_temporal_embeddings = False
+        elif config.read_token_type == "add":
+            self.layer = BertLayerAddDNC(config, scale_original_tokens=False)
+        elif config.read_token_type == "add_scale":
+            self.layer = BertLayerAddDNC(config, scale_original_tokens=True)
+        print(config.read_token_type)
+        self.use_temporal_embeddings = True
+        assert config.use_temporal_embeddings == True
+            
         self.hidden_layer_number = config.num_hidden_layers
         #self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
 

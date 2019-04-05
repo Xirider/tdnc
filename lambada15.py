@@ -428,7 +428,7 @@ def main():
                         type=int,
                         help="Total batch size for training.")
     parser.add_argument("--learning_rate",
-                        default=3e-5,
+                        default=1e-4,
                         type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--num_train_epochs",
@@ -509,7 +509,8 @@ def main():
     parser.add_argument("--tensorboard",
                 action='store_true',
                 help="whether to track weights and memories in tensorboard")
-
+    parser.add_argument("--read_token_type", default="concat", type=str, required=False,
+                        help="The read tokens can be either concat, added or added and scaled to the original tokens")
     args = parser.parse_args()
 
 
@@ -545,7 +546,7 @@ def main():
     config = BertConfig(30522)
     config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, 
                             max_comp_length = args.max_comp_length, memory_size = args.memory_size, direct_write =args.direct_write, 
-                            read_gate=args.read_gate)
+                            read_gate=args.read_gate, read_token_type=args.read_token_type)
 
     # to test without ut embeddings: , use_mask_embeddings=False, use_temporal_embeddings=False
     

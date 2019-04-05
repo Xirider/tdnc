@@ -657,7 +657,7 @@ class BertLayerAddDNC(nn.Module):
         # use sam to read and write tokens, input mask to show dnc which positions should not read and write
         read_tokens, self.memory_hidden, interpolation_gate, write_gate, read_gate = self.memory(hidden_states, self.memory_hidden, attention_mask = attention_mask)
 
-        if scale_original_tokens:
+        if self.scale_original_tokens:
             hidden_states = self.hidden_gate(hidden_states).expand(batch_size, token_number, units) * hidden_states
         # add tokens
         hidden_states = hidden_states + read_tokens

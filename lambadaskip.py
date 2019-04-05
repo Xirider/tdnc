@@ -506,6 +506,9 @@ def main():
     parser.add_argument("--read_gate",
                 action='store_true',
                 help="whether to use read gate")
+    parser.add_argument("--calc_with_read",
+                action='store_true',
+                help="whether to use read gate")
     parser.add_argument("--tensorboard",
                 action='store_true',
                 help="whether to track weights and memories in tensorboard")
@@ -547,7 +550,7 @@ def main():
     config = BertConfig(30522)
     config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, 
                             max_comp_length = args.max_comp_length, memory_size = args.memory_size, direct_write =args.direct_write, 
-                            read_gate=args.read_gate, read_token_type=args.read_token_type)
+                            read_gate=args.read_gate, read_token_type=args.read_token_type, calc_with_read=args.calc_with_read)
 
     # to test without ut embeddings: , use_mask_embeddings=False, use_temporal_embeddings=False
     
@@ -602,6 +605,11 @@ def main():
             os.makedirs(_MODELS)
 
         torch.save(model.state_dict(), _MODELS / "UTafterBertPretrained.pt")
+
+        model = False
+        inter_model = False
+        bert_state_dict= False
+        cls_state_dict=False
 
 
 

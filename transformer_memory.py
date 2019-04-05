@@ -41,7 +41,8 @@ class SparseMemory(nn.Module):
       mem_gpu_id=-1,
       direct_write=False,
       read_gate=False,
-      read_strength = True
+      read_strength = True,
+      calc_with_read = False
       #x added direct write, independent false
   ):
     super(SparseMemory, self).__init__()
@@ -65,6 +66,8 @@ class SparseMemory(nn.Module):
     self.read_gate = read_gate
     #n needs to be exchanged to true token lenght
     # self.input_size = self.input_size // 2
+
+    self.calc_with_read = calc_with_read
 
     self.print_tensors = False
     self.usage_type = "lru"
@@ -96,22 +99,37 @@ class SparseMemory(nn.Module):
     #   T.nn.init.orthogonal(self.write_gate_transform.weight)
     # else:
       #x depending on directly writing or not, create enough outputs
+    self.interface_size = (w * r) + w + 1 + 1
     if self.direct_write:
       #x read query w, sparse read plus lru gates, write gate
-      self.interface_size = (w * r) + 1+ 1
-    else:
-      #x with addition write vector calculation
-      self.interface_size = (w * r) + w + 1 + 1
+      self.interface_size -= w
     if self.read_gate:
       self.interface_size += 1
+    
+    if self.calc_with_read:
+      self.second_interface_size = self.interface_size - w * r
+      self.interface_size = w * r
+
     if self.read_strength:
-      self.interface_size +=1
+      self.interface_size += 1
+
+    print(f"Interface size is: {self.interface_size}")
+    if self.calc_with_read:
+      print(f"Second Interface size is: {self.second_interface_size}")
+
     if self.gpu_id != -1:
+      if self.calc_with_read:
+        self.second_interface_weights = nn.Linear(self.input_size*2, self.second_interface_size).cuda()
+        self.second_layernorm = BertLayerNorm(self.second_interface_size).cuda()
       self.interface_weights = nn.Linear(self.input_size, self.interface_size).cuda()
       self.layernorm = BertLayerNorm(self.interface_size - 1 if self.read_strength else self.interface_size).cuda()
     else:
+      if self.calc_with_read:
+        self.second_interface_weights = nn.Linear(self.input_size*2, self.second_interface_size)
+        self.second_layernorm = BertLayerNorm(self.second_interface_size)
       self.interface_weights = nn.Linear(self.input_size, self.interface_size)
-      self.layernorm = BertLayerNorm(self.interface_size)
+      self.layernorm = BertLayerNorm(self.interface_size - 1 if self.read_strength else self.interface_size)
+
     T.nn.init.orthogonal_(self.interface_weights.weight)
 
     # creates and 5x5 identitiy
@@ -578,37 +596,64 @@ class SparseMemory(nn.Module):
     # else:
     ξ = self.interface_weights(e)
 
-    if self.read_strength and self.read_gate:
+    if self.read_strength and self.read_gate and not self.calc_with_read:
       self.saved_read_strength = ξ[:, :, -3].contiguous().view(b, s, 1) 
       ξ = T.cat([ξ[:,:, :-3], ξ[:,:,-2:]],2 )
 
-    ξ = self.layernorm(ξ)
+    if self.read_strength and self.read_gate and self.calc_with_read:
+      self.saved_read_strength = ξ[:, :, -1].contiguous().view(b, s, 1) 
+      ξ = ξ[:,:,:-1]
 
+
+    ξ = self.layernorm(ξ)
     # r read keys (b * r * w)
     read_query = ξ[:, :, :r * w].contiguous().view(b, s, r, w)
     # write key (b * 1 * w)
-    if self.direct_write:
-      write_vector = e.unsqueeze(2).contiguous().view(b, s, 1, w)
-      # write vector (b * 1 * r)
-      interpolation_gate = T.sigmoid(ξ[: , :, r * w: r * w + 1]).contiguous().view(b, s, 1)
-      # write gate (b * 1)
-      #n maybe need to change unsqueeze dim (changed it already from 1 to 2, but dont know)
-      write_gate = T.sigmoid(ξ[: ,:, -1].contiguous()).view(b, s, 1)
+
+    self.timestep += 1
+    #x changed order to first read then write
+    read_vectors, hidden = self.read(read_query, hidden, attention_mask)
+
+    if self.calc_with_read:
+      ξ = self.second_interface_weights(T.cat([e, read_vectors], 2))
+      ξ = self.second_layernorm(ξ)
+    
+      if self.direct_write:
+        write_vector = e.unsqueeze(2).contiguous().view(b, s, 1, w)
+        # write vector (b * 1 * r)
+        interpolation_gate = T.sigmoid(ξ[: , :, 0]).contiguous().view(b, s, 1)
+        # write gate (b * 1)
+        #n maybe need to change unsqueeze dim (changed it already from 1 to 2, but dont know)
+        write_gate = T.sigmoid(ξ[: ,:, -1].contiguous()).view(b, s, 1)
+      else:
+        write_vector = ξ[:, :, :w].contiguous().view(b,s , 1, w)
+        # write vector (b * 1 * r)
+        interpolation_gate = T.sigmoid(ξ[:,:, w: w + 1]).contiguous().view(b, s, 1)
+        # write gate (b * 1)
+        
+        write_gate = T.sigmoid(ξ[:, :, -1].contiguous()).view(b, s, 1)
     else:
-      write_vector = ξ[:, :,  r * w: r * w + w].contiguous().view(b,s , 1, w)
-      # write vector (b * 1 * r)
-      interpolation_gate = T.sigmoid(ξ[:,:, r * w + w: r * w + w + 1]).contiguous().view(b, s, 1)
-      # write gate (b * 1)
-      
-      write_gate = T.sigmoid(ξ[:, :, -1].contiguous()).view(b, s, 1)
+      if self.direct_write:
+        write_vector = e.unsqueeze(2).contiguous().view(b, s, 1, w)
+        # write vector (b * 1 * r)
+        interpolation_gate = T.sigmoid(ξ[: , :, r * w: r * w + 1]).contiguous().view(b, s, 1)
+        # write gate (b * 1)
+        #n maybe need to change unsqueeze dim (changed it already from 1 to 2, but dont know)
+        write_gate = T.sigmoid(ξ[: ,:, -1].contiguous()).view(b, s, 1)
+      else:
+        write_vector = ξ[:, :,  r * w: r * w + w].contiguous().view(b,s , 1, w)
+        # write vector (b * 1 * r)
+        interpolation_gate = T.sigmoid(ξ[:,:, r * w + w: r * w + w + 1]).contiguous().view(b, s, 1)
+        # write gate (b * 1)
+        
+        write_gate = T.sigmoid(ξ[:, :, -1].contiguous()).view(b, s, 1)
+    
     if self.read_gate:
       read_gate = T.sigmoid(ξ[:, :, -2].contiguous()).view(b, s, 1)
 
     else:
       read_gate = None
-    self.timestep += 1
-    #x changed order to first read then write
-    read_vectors, hidden = self.read(read_query, hidden, attention_mask)
+
     hidden = self.write(interpolation_gate, write_vector, write_gate, hidden, attention_mask)
 
     if self.read_gate:

@@ -522,7 +522,6 @@ class SparseMemory(nn.Module):
     # ke = keys.abs().sum(2)
     # vis = visible_memory.abs().sum(2)
     #cosinedistance2 =  deepmindcosine(keys, visible_memory)
-    import pdb; pdb.set_trace()
     # cosinedistance = θ(visible_memory, keys) * T.pow(10, self.saved_read_strength) *self.spiky
     cosinedistance = correct_cosine(keys, visible_memory) * T.log(T.exp(self.saved_read_strength) + 1.)
     #cosinedistance = θ(visible_memory, keys) * T.pow(self.spiky, self.saved_read_strength)

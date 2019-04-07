@@ -800,7 +800,7 @@ class BertEncoderDNC(nn.Module):
             self.layer = BertLayerAddDNC(config, scale_original_tokens=False)
         elif config.read_token_type == "add_scale":
             self.layer = BertLayerAddDNC(config, scale_original_tokens=True)
-        print(config.read_token_type)
+        #print(config.read_token_type)
         self.use_temporal_embeddings = True
         assert config.use_temporal_embeddings == True
             

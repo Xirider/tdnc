@@ -523,7 +523,11 @@ class SparseMemory(nn.Module):
     # vis = visible_memory.abs().sum(2)
     #cosinedistance2 =  deepmindcosine(keys, visible_memory)
     # cosinedistance = θ(visible_memory, keys) * T.pow(10, self.saved_read_strength) *self.spiky
-    cosinedistance = correct_cosine(keys, visible_memory) * T.log(T.exp(self.saved_read_strength) + 1.)
+
+    #cosinedistance = correct_cosine(keys, visible_memory) * T.log(T.exp(self.saved_read_strength) + 1.)
+    import pdb; pdb.set_trace()
+    cosinedistance = correct_cosine(keys, visible_memory) * 1.5**self.saved_read_strength
+
     #cosinedistance = θ(visible_memory, keys) * T.pow(self.spiky, self.saved_read_strength)
     # read_weights = σ(cosinedistance, 2)
     # import pdb; pdb.set_trace()
@@ -611,6 +615,7 @@ class SparseMemory(nn.Module):
     # write key (b * 1 * w)
 
     self.timestep += 1
+    
     #x changed order to first read then write
     read_vectors, hidden = self.read(read_query, hidden, attention_mask)
 

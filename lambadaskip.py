@@ -790,6 +790,7 @@ def main():
 
                     safed_input_mask = input_mask
                     safed_lm_label_ids = lm_label_ids
+                    safed_input_ids = input_ids[0]
 
                     
                 else: 
@@ -839,7 +840,7 @@ def main():
                         realwords = tokenizer.convert_ids_to_tokens(words)
                         print("Real sentences:")
                         with torch.no_grad():
-                            firstbatch = input_ids[0]
+                            firstbatch = safed_input_ids
                             words = firstbatch.tolist()
 
                         actualwords = tokenizer.convert_ids_to_tokens(words)

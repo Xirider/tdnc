@@ -514,6 +514,9 @@ def main():
                 help="whether to use read gate")
     parser.add_argument("--read_token_type", default="concat", type=str, required=False,
                         help="The read tokens can be either concat, added or added and scaled to the original tokens")
+    parser.add_argument("--resume",
+                action='store_true',
+                help="resume from last checkpoint with the same folder name")
     args = parser.parse_args()
 
 
@@ -689,6 +692,29 @@ def main():
                 model.cls.train()
 
 
+    if args.resume:
+        print("IMPORTANT: Loaded from last checkpoint")
+        model.load_state_dict(torch.load(_MODELS / args.output_dir / "checkpoint.pt"), strict=False)
+        model.train()
+
+        if args.model_type == "UTafterBertPretrained":
+            model.bert.eval()
+            model.ut.train()
+            model.cls.eval()
+
+            if args.cls_train:
+                model.cls.train()
+
+        if args.model_type == "TDNCafterBertPretrained":
+            model.bert.eval()
+            model.ut.train()
+            model.cls.eval()
+
+            if args.cls_train:
+                model.cls.train()
+
+
+
     if args.fp16:
         model.half()
     model.to(device)
@@ -768,6 +794,7 @@ def main():
             nb_tr_examples, nb_tr_steps = 0, 0
             loss_ema = 0
             acc_ema = 0
+            best_acc_ema = 0
             lendata =len(train_dataloader)
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
 
@@ -861,9 +888,21 @@ def main():
                     optimizer.zero_grad()
                     experiment.log_metric("current_lr", optimizer.current_lr , step = step)
                     global_step += 1
-                
 
-        writer.close()
+
+                if (step + 1) % 5000 == 0:
+                    if acc_ema > best_acc_ema:
+                        best_acc_ema = acc_ema
+                        if not os.path.exists(_MODELS):
+                            os.makedirs(_MODELS)
+                        if not os.path.exists(_MODELS/ args.output_dir):
+                            os.makedirs( _MODELS / args.output_dir)
+                        output_model_file = os.path.join(_MODELS , args.output_dir, "checkpoint.pt")
+                        torch.save(model.state_dict(), output_model_file)
+                        logger.info(f"Created new checkpoint")
+                
+        if args.tensorboard:
+            writer.close()
         # Save a trained model
         logger.info("** ** * Saving fine - tuned model ** ** * ")
 

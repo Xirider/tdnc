@@ -1069,20 +1069,20 @@ def main():
                         print((model.ut.encoder.layer.memory.saved_read_softmax > 0.99999).sum())
 
 
-                    nb_tr_examples += input_ids.size(0)
-                    nb_tr_steps += 1
-                    if step % args.gradient_accumulation_steps == 0:
-                        # if args.fp16:
-                        #     # modify learning rate with special warm up BERT uses
-                        #     # if args.fp16 is False, BertAdam is used that handles this automatically
-                        #     lr_this_step = args.learning_rate * warmup_linear(global_step/num_train_optimization_steps, args.warmup_proportion)
-                        #     hyperparams["learning_rate"] = lr_this_step
-                        #     for param_group in optimizer.param_groups:
-                        #         param_group['lr'] = lr_this_step
-                        optimizer.step()
-                        optimizer.zero_grad()
-                        experiment.log_metric("current_lr", optimizer.current_lr , step = global_step)
-                        global_step += 1
+                nb_tr_examples += input_ids.size(0)
+                nb_tr_steps += 1
+                if step % args.gradient_accumulation_steps == 0:
+                    # if args.fp16:
+                    #     # modify learning rate with special warm up BERT uses
+                    #     # if args.fp16 is False, BertAdam is used that handles this automatically
+                    #     lr_this_step = args.learning_rate * warmup_linear(global_step/num_train_optimization_steps, args.warmup_proportion)
+                    #     hyperparams["learning_rate"] = lr_this_step
+                    #     for param_group in optimizer.param_groups:
+                    #         param_group['lr'] = lr_this_step
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    experiment.log_metric("current_lr", optimizer.current_lr , step = global_step)
+                    global_step += 1
 
                     if step  % 2500 == 0:
                         if acc_ema > best_acc_ema:

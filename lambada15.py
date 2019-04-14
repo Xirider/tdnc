@@ -819,9 +819,9 @@ def main():
                 # Metrics
                 losscpu = loss.item()
                 print(f"Step {step} loss: {losscpu} ")
-                experiment.log_metric("loss", losscpu, step = step)
+                experiment.log_metric("loss", losscpu, step = global_step)
                 loss_ema = (_EMA_ALPHA * losscpu) + (1.0 - _EMA_ALPHA) * loss_ema
-                experiment.log_metric("loss_ema", loss_ema , step = step)
+                experiment.log_metric("loss_ema", loss_ema , step = global_step)
                 tr_loss += losscpu
                 
                 with torch.no_grad():
@@ -833,9 +833,9 @@ def main():
                     totalmasks = totalmasks.item()
                 
                 cur_accuracy = correct_number / totalmasks
-                experiment.log_metric("accuracy", cur_accuracy , step = step)
+                experiment.log_metric("accuracy", cur_accuracy , step = global_step)
                 acc_ema = (_EMA_ALPHA * cur_accuracy) + (1.0 - _EMA_ALPHA) * acc_ema
-                experiment.log_metric("accuracy_ema", acc_ema , step = step)
+                experiment.log_metric("accuracy_ema", acc_ema , step = global_step)
 
 
                 if step % args.inter_results == 0:
@@ -886,7 +886,7 @@ def main():
                     #         param_group['lr'] = lr_this_step
                     optimizer.step()
                     optimizer.zero_grad()
-                    experiment.log_metric("current_lr", optimizer.current_lr , step = step)
+                    experiment.log_metric("current_lr", optimizer.current_lr , step = global_step)
                     global_step += 1
 
 

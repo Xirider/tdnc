@@ -447,7 +447,7 @@ def main():
                         action='store_true',
                         help="Whether to load train samples into memory or use disk")
     parser.add_argument("--do_upper_case",
-                        action='store_false',
+                        action='store_true',
                         help="Whether to lower case the input text. True for uncased models, False for cased models.")
     parser.add_argument("--local_rank",
                         type=int,

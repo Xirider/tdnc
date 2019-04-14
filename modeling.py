@@ -1382,14 +1382,18 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
         super(BertModelDNCNoEmbedding, self).__init__(config)
         if config.use_mask_embeddings:
             self.mask_embedding = nn.Embedding(2, config.hidden_size)
-            self.dropout = nn.Dropout(config.hidden_dropout_prob)
+            self.dropout1 = nn.Dropout(config.hidden_dropout_prob)
+            self.dropout2 = nn.Dropout(config.hidden_dropout_prob)
+            self.dropout3 = nn.Dropout(config.hidden_dropout_prob)
             self.mask_token_number = config.mask_token_number
             self.use_mask_embeddings = True
             self.mask_positions = False
             self.create_masks = True
+            self.hidden_size = config.hidden_size
         else:
             self.use_mask_embeddings = False
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
+        self.encode_decode_embeddings = nn.Embedding(2, config.hidden_size)
 
         self.encoder = BertEncoderDNC(config)
         self.apply(self.init_bert_weights)
@@ -1426,17 +1430,23 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
         if self.create_masks:
             self.mask_positions = torch.eq(input_ids, self.mask_token_number)
 
+        batch_no_mask = torch.eq(self.mask_positions.sum(1), 0).type(torch.long)
+
+        encode_decode_embeddings = self.encode_decode_embeddings(batch_no_mask).unsqueeze(1).expand(batch_no_mask.size(0),input_ids.size(1), self.hidden_size)
+        encode_decode_embeddings = self.dropout3(encode_decode_embeddings)
+
         position_ids = torch.arange(total_tokens, dtype=torch.long, device=input_tokens.device)
         position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
         position_embeddings = self.position_embeddings(position_ids)
+        position_embeddings = self.dropout2(position_embeddings)
         
         if self.use_mask_embeddings:
             mask_inter = torch.as_tensor(self.mask_positions, dtype = torch.long, device = input_tokens.device)
             mask_out = self.mask_embedding(mask_inter)
-            mask_out = self.dropout(mask_out)
+            mask_out = self.dropout1(mask_out)
             input_tokens = input_tokens + mask_out
 
-        input_tokens = input_tokens + position_embeddings
+        input_tokens = input_tokens + position_embeddings + encode_decode_embeddings
 
 
         encoded_layers = self.encoder(input_tokens, attention_mask,

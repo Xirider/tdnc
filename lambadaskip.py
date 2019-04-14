@@ -447,7 +447,7 @@ def main():
                         action='store_true',
                         help="Whether to load train samples into memory or use disk")
     parser.add_argument("--do_upper_case",
-                        action='store_false',
+                        action='store_true',
                         help="Whether to lower case the input text. True for uncased models, False for cased models.")
     parser.add_argument("--local_rank",
                         type=int,
@@ -909,7 +909,7 @@ def main():
                         experiment.log_metric("current_lr", optimizer.current_lr , step = step)
                         global_step += 1
 
-                    if (step + 1) % 5000 == 0:
+                    if (step + 1) % 2500 == 0:
                         if acc_ema > best_acc_ema:
                             best_acc_ema = acc_ema
                             if not os.path.exists(_MODELS):

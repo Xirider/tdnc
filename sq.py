@@ -968,13 +968,31 @@ def main():
 
         
 
-        for _ in trange(int(args.num_train_epochs), desc="Epoch"):
+        for epochnumber in trange(int(args.num_train_epochs), desc="Epoch"):
             tr_loss = 0
             nb_tr_examples, nb_tr_steps = 0, 0
             loss_ema = 0
             acc_ema = 0
             best_acc_ema = 0
             lendata =len(train_dataloader)
+
+            if args.model_type == "UTafterBertPretrained":
+                model.bert.eval()
+                model.ut.train()
+                model.cls.eval()
+
+                if args.cls_train:
+                    model.cls.train()
+
+            if args.model_type == "TDNCafterBertPretrained":
+                model.bert.eval()
+                model.ut.train()
+                model.cls.eval()
+
+                if args.cls_train:
+                    model.cls.train()
+
+
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
 
                 if step == lendata or step == lendata-1:
@@ -1099,6 +1117,87 @@ def main():
                             torch.save(model.state_dict(), output_model_file)
                             logger.info(f"Created new checkpoint")
 
+            # here start eval each epoch
+
+
+                    
+            if args.do_eval:  
+
+                test_dataset = LambadaTrain(_TESTDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, fake_context = args.fake_context)
+                test_sampler = RandomSampler(test_dataset)
+                test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=args.train_batch_size)
+
+                model.eval()
+                with torch.no_grad():
+                    for _ in trange(1, desc="Epoch"):
+                        test_loss = 0
+                        nb_test_examples, nb_test_steps = 0, 0
+                        totalcounteri = 0
+                        total_acc = 0
+                        lentest = len(test_dataloader)
+                        for step, batch in enumerate(tqdm(test_dataloader, desc="Iteration")):
+                            if step == lentest or step == lentest-1:
+                                break
+
+                            context_example_list, question_example = batch
+                            question_example = tuple(t.to(device) for t in question_example)
+                            context_example_list = [tuple(t.to(device) for t in context_example) for context_example in context_example_list]
+
+                        # context
+                            for contextid, context in enumerate(context_example_list):
+                                if contextid == 0:
+                                    reset_memory = True
+                                    erase_memory = True
+                                else:
+                                    reset_memory = False
+                                    erase_memory = False
+
+                                input_ids, input_mask, segment_ids, lm_label_ids  = context
+
+                                _, _ = model(input_ids, segment_ids, input_mask, lm_label_ids , reset_memory=reset_memory, erase_memory=erase_memory)
+
+                        
+                        # question and answer
+                            input_ids, input_mask, segment_ids, lm_label_ids  = question_example
+                            loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=False, erase_memory=False)
+
+
+
+
+
+                            if n_gpu > 1:
+                                loss = loss.mean() # mean() to average on multi-gpu.
+                            if args.gradient_accumulation_steps > 1:
+                                loss = loss / args.gradient_accumulation_steps
+
+                            maxes = torch.argmax(predictions, 2)
+                            correct_number = (lm_label_ids == maxes).sum()
+                            correct_number = correct_number.item()
+                            totalmasks = (lm_label_ids > 0).sum()
+                            totalmasks = totalmasks.item()
+                            if totalmasks > 0:
+                                cur_accuracy = correct_number / totalmasks
+                                total_acc += cur_accuracy
+
+                            print(f"Current Loss: {loss.item()}")
+
+                            perpl = math.exp(loss.item())
+                            print(f"Perplexity: {perpl}")
+                            test_loss += loss.item()
+                            nb_test_steps += 1
+
+                    epochloss = test_loss / nb_test_steps
+                    print(f"Loss for test Data: {epochloss}")
+                    experiment.log_metric("test_loss", epochloss, step = epochnumber)
+                    perpl = math.exp(epochloss)
+                    print(f"Perplexity for Test Data: {perpl}")
+                    experiment.log_metric("test_perplexity", perpl, step = epochnumber)
+                    accuracy = total_acc / nb_test_steps
+                    print(f"Accuracy for Test Data: {accuracy}")
+                    experiment.log_metric("test_accuracy", accuracy, step = epochnumber)
+
+
+
                 
         if args.tensorboard:
             writer.close()
@@ -1115,81 +1214,6 @@ def main():
             torch.save(model.state_dict(), output_model_file)
             logger.info(f"Creating new dir and saving model in: {args.output_dir}")
 
-
-    if args.do_eval:  
-
-        test_dataset = LambadaTrain(_TESTDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, fake_context = args.fake_context)
-        test_sampler = RandomSampler(test_dataset)
-        test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=args.train_batch_size)
-
-        model.eval()
-        with torch.no_grad():
-            for _ in trange(1, desc="Epoch"):
-                test_loss = 0
-                nb_test_examples, nb_test_steps = 0, 0
-                totalcounteri = 0
-                total_acc = 0
-                lentest = len(test_dataloader)
-                for step, batch in enumerate(tqdm(test_dataloader, desc="Iteration")):
-                    if step == lentest or step == lentest-1:
-                        break
-
-                    context_example_list, question_example = batch
-                    question_example = tuple(t.to(device) for t in question_example)
-                    context_example_list = [tuple(t.to(device) for t in context_example) for context_example in context_example_list]
-
-                # context
-                    for contextid, context in enumerate(context_example_list):
-                        if contextid == 0:
-                            reset_memory = True
-                            erase_memory = True
-                        else:
-                            reset_memory = False
-                            erase_memory = False
-
-                        input_ids, input_mask, segment_ids, lm_label_ids  = context
-
-                        _, _ = model(input_ids, segment_ids, input_mask, lm_label_ids , reset_memory=reset_memory, erase_memory=erase_memory)
-
-                
-                # question and answer
-                    input_ids, input_mask, segment_ids, lm_label_ids  = question_example
-                    loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=False, erase_memory=False)
-
-
-
-
-
-                    if n_gpu > 1:
-                        loss = loss.mean() # mean() to average on multi-gpu.
-                    if args.gradient_accumulation_steps > 1:
-                        loss = loss / args.gradient_accumulation_steps
-
-                    maxes = torch.argmax(predictions, 2)
-                    correct_number = (lm_label_ids == maxes).sum()
-                    correct_number = correct_number.item()
-                    totalmasks = (lm_label_ids > 0).sum()
-                    totalmasks = totalmasks.item()
-                    if totalmasks > 0:
-                        cur_accuracy = correct_number / totalmasks
-                        total_acc += cur_accuracy
-
-                    print(f"Current Loss: {loss.item()}")
-
-                    perpl = math.exp(loss.item())
-                    print(f"Perplexity: {perpl}")
-                    test_loss += loss.item()
-                    nb_test_steps += 1
-
-            epochloss = test_loss / nb_test_steps
-            print(f"Loss for test Data: {epochloss}")
-            experiment.log_metric("test_loss", epochloss)
-            perpl = math.exp(epochloss)
-            print(f"Perplexity for Test Data: {perpl}")
-            experiment.log_metric("test_perplexity", perpl)
-            accuracy = total_acc / nb_test_steps
-            print(f"Accuracy for Test Data: {accuracy}")
-            experiment.log_metric("test_accuracy", accuracy)
 
 ##################################################################################
 if __name__ == "__main__":

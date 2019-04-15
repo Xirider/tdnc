@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader, Dataset, RandomSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 
-from lambadatest import LambadaTest
+#from lambadatest import LambadaTest
 
 from modeling import BertForMaskedLM, BertConfig, BertForMaskedLMUt, UTafterBert, TDNCafterBert
 from tokenization import BertTokenizer
@@ -47,10 +47,12 @@ logger = logging.getLogger(__name__)
 _CURPATH = Path.cwd() 
 _TMPDIR = _CURPATH / "squad_data"
 _TRAINDIR = _TMPDIR / "squad_train"
+_TESTDIR = _TMPDIR / "squad_test"
 _TESTFILE = "dev-v2.0.json"
 _DATADIR = _CURPATH / "squad_data"
 _TRAINFILE = "train-v2.0.json"
 _URL = "https://rajpurkar.github.io/SQuAD-explorer/dataset/" + _TRAINFILE
+_DEV_URL = "https://rajpurkar.github.io/SQuAD-explorer/dataset/" + _TESTFILE
 _MODELS = _CURPATH / "models"
 
 _EMA_ALPHA = 0.025
@@ -715,6 +717,8 @@ def main():
 
     if args.download and args.do_train:
         filename = maybe_download(_TRAINDIR, _TRAINFILE, _URL)
+    if args.download and args.do_eval:
+        filename = maybe_download(_TESTDIR, _TESTFILE, _DEV_URL)
 
     lower_case = not args.do_upper_case
     tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case= lower_case)
@@ -1114,7 +1118,7 @@ def main():
 
     if args.do_eval:  
 
-        test_dataset = LambadaTest(_TMPDIR, _TESTFILE, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild)
+        test_dataset = LambadaTrain(_TESTDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, fake_context = args.fake_context)
         test_sampler = RandomSampler(test_dataset)
         test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=args.train_batch_size)
 
@@ -1130,7 +1134,7 @@ def main():
                     if step == lentest or step == lentest-1:
                         break
 
-                        context_example_list, question_example = batch
+                    context_example_list, question_example = batch
                     question_example = tuple(t.to(device) for t in question_example)
                     context_example_list = [tuple(t.to(device) for t in context_example) for context_example in context_example_list]
 
@@ -1166,9 +1170,9 @@ def main():
                     correct_number = correct_number.item()
                     totalmasks = (lm_label_ids > 0).sum()
                     totalmasks = totalmasks.item()
-                
-                    cur_accuracy = correct_number / totalmasks
-                    total_acc += cur_accuracy
+                    if totalmasks > 0:
+                        cur_accuracy = correct_number / totalmasks
+                        total_acc += cur_accuracy
 
                     print(f"Current Loss: {loss.item()}")
 

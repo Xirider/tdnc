@@ -502,7 +502,8 @@ class BertLayerDNC(nn.Module):
         self.gpu_id = 0
         self.memory = SparseMemory(input_size= config.hidden_size, mem_size=config.memory_size, cell_size=config.hidden_size,
          independent_linears=False, read_heads=1, sparse_reads=4, num_lists=None, index_checks=None, 
-         gpu_id=self.gpu_id, mem_gpu_id=self.gpu_id, direct_write=config.direct_write, read_gate=config.read_gate, calc_with_read = config.calc_with_read)
+         gpu_id=self.gpu_id, mem_gpu_id=self.gpu_id, direct_write=config.direct_write, 
+         read_gate=config.read_gate, calc_with_read = config.calc_with_read, dropout = config.hidden_dropout_prob)
 
         self.attention = BertAttentionDNC(config)
         self.intermediate = BertIntermediate(config)

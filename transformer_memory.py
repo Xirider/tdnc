@@ -42,7 +42,8 @@ class SparseMemory(nn.Module):
       direct_write=False,
       read_gate=False,
       read_strength = True,
-      calc_with_read = False
+      calc_with_read = False,
+      dropout = 0.
       #x added direct write, independent false
   ):
     super(SparseMemory, self).__init__()
@@ -52,6 +53,7 @@ class SparseMemory(nn.Module):
     self.gpu_id = gpu_id
     self.mem_gpu_id = mem_gpu_id
     self.input_size = input_size
+    self.dropout_rate = dropout
     self.independent_linears = independent_linears
     self.K = sparse_reads if self.mem_size > sparse_reads else self.mem_size
     # if self. if self.print_tensors: print(f"k: {self.K}")
@@ -131,6 +133,8 @@ class SparseMemory(nn.Module):
       self.layernorm = BertLayerNorm(self.interface_size - 1 if self.read_strength else self.interface_size)
 
     T.nn.init.orthogonal_(self.interface_weights.weight)
+
+    self.dropout = nn.Dropout(w *r)
 
     # creates and 5x5 identitiy
     self.I = cuda(1 - T.eye(self.c).unsqueeze(0), gpu_id=self.gpu_id)  # (1 * n * n)
@@ -609,6 +613,8 @@ class SparseMemory(nn.Module):
 
 
     ξ = self.layernorm(ξ)
+    if self.read_strength and self.read_gate and self.calc_with_read:
+      ξ = self.dropout(ξ)
     # r read keys (b * r * w)
     read_query = ξ[:, :, :r * w].contiguous().view(b, s, r, w)
     # write key (b * 1 * w)

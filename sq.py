@@ -690,7 +690,9 @@ def main():
                     type=int,
                     default=0,
                     help="how many in article distractor paragraphs are input")
-
+    parser.add_argument('--dropout',
+                        type = float, default = 0.1,
+                        help = "Dropout in bert and in DNC")
     args = parser.parse_args()
 
 

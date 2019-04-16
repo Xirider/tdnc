@@ -134,7 +134,7 @@ class SparseMemory(nn.Module):
 
     T.nn.init.orthogonal_(self.interface_weights.weight)
 
-    self.dropout = nn.Dropout(w *r)
+    self.dropout = nn.Dropout(self.dropout_rate)
 
     # creates and 5x5 identitiy
     self.I = cuda(1 - T.eye(self.c).unsqueeze(0), gpu_id=self.gpu_id)  # (1 * n * n)

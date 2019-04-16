@@ -103,7 +103,7 @@ class LambadaTrain(Dataset):
         self.answer_size = 5
         self.qa_extra_tokens = 4 # Question: Answer:
 
-        self.max_questions = 100
+        self.max_questions = 1
 
 
         if rebuild:

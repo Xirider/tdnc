@@ -6,3 +6,9 @@ checkpoints
 __pycache__/modeling.cpython-36.pyc
 runs/
 squad_data/
+*.raw
+wikitext-103-raw/wiki_train/build_docs.p
+*.zip
+*.pyc
+*.pyc
+__pycache__/tokenization.cpython-36.pyc

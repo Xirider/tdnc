@@ -25,6 +25,11 @@ from modeling import BertForMaskedLM, BertConfig, BertForMaskedLMUt, UTafterBert
 from tokenization import BertTokenizer
 from optimization import BertAdam, warmup_linear
 
+from squaddata import SquadTrain
+from wikitextlm import WikitextTrain, prepare_wikitext
+
+from putils import maybe_download, load_weights_from_state
+
 import random
 
 import tarfile
@@ -55,498 +60,17 @@ _URL = "https://rajpurkar.github.io/SQuAD-explorer/dataset/" + _TRAINFILE
 _DEV_URL = "https://rajpurkar.github.io/SQuAD-explorer/dataset/" + _TESTFILE
 _MODELS = _CURPATH / "models"
 
+
+_WIKIFOLD = "wikitext-103-raw"
+_WIKIFOLDER =  _CURPATH / _WIKIFOLD
+_TRAINDIRWIKI = _WIKIFOLDER / "wiki_train"
+_DEVDIRWIKI = _WIKIFOLDER / "wiki_dev"
+_WIKIZIPFILE = "wikitext-103-raw-v1.zip"
+_WIKIURL = "https://s3.amazonaws.com/research.metamind.io/wikitext/" + _WIKIZIPFILE
+_WIKITRAINTOKENS = "wiki.train.raw"
+_WIKIDEVTOKENS = "wiki.valid.raw"
+
 _EMA_ALPHA = 0.025
-
-
-
-def maybe_download(directory, filename, uri):
-  
-    filepath = os.path.join(directory, filename)
-    if not os.path.exists(directory):
-        logger.info(f"Creating new dir: {directory}")
-        os.makedirs(directory)
-    if not os.path.exists(filepath):
-        logger.info("Downloading und unpacking file, as file does not exist yet")
-        r = requests.get(uri, allow_redirects=True)
-        open(filepath, "wb").write(r.content)
-
-    return filepath
-    
-
-
-
-class LambadaTrain(Dataset):
-    def __init__(self, corpus_path, tokenizer, seq_len, encoding="utf-8", corpus_lines=None,  rebuild=True
-                , short_factor = 1, distribute_context_over = 1, fake_context=0, out_doc_mult = 1 ):
-
-        self.vocab = tokenizer.vocab
-        self.tokenizer = tokenizer
-        self.seq_len = seq_len
-        self.corpus_lines = corpus_lines  # number of non-empty lines in input corpus
-        self.corpus_path = corpus_path
-        self.encoding = encoding
-        self.current_doc = 0  # to avoid random sentence from same doc
-
-        # for loading samples directly from file
-        self.sample_counter = 0  # used to keep track of full epochs on file
-        self.line_buffer = None  # keep second sentence of a pair in memory and use as first sentence in next pair
-
-        # for loading samples in memory
-        self.current_random_doc = 0
-        self.num_docs = 0
-        self.short_factor = short_factor
-
-        self.distribute_context_over = distribute_context_over
-        self.fake_context = fake_context
-        self.out_doc_mult = out_doc_mult
-
-        self.answer_size = 5
-        self.qa_extra_tokens = 4 # Question: Answer:
-
-        self.max_questions = 1
-
-
-        if rebuild:
-            self.docs = []
-            skipcounter = 0
-            if not os.path.exists(self.corpus_path):
-                os.makedirs(self.corpus_path)
-
-            if os.path.exists(self.corpus_path / "build_docs_train.p"):
-                os.remove(self.corpus_path / "build_docs_train.p")
-            # for subdir in os.listdir(self.corpus_path):
-            #     print(subdir)
-            #     for files in os.listdir(self.corpus_path / subdir):
-            #         with open(self.corpus_path / subdir / files , "r", encoding=encoding) as f:
-            #             interdoc = ""
-
-            #             for line in tqdm(f, desc="Loading Dataset", total=corpus_lines):
-                            
-
-            #                 interdoc += line
-
-            #                 if len(interdoc.split()) >= self.creation_length:
-            #                     if skipcounter % self.short_factor == 0:
-            #                         self.docs.append(interdoc)
-            #                         self.num_docs += 1
-            #                     interdoc = ""
-            #                     skipcounter += 1
-                            
-            #     print("genre done")
-            
-            import json
-            files = os.listdir(self.corpus_path)[0]
-                
-            with open(self.corpus_path/files, "r", encoding=self.encoding) as json_file:
-                data_dict = json.load(json_file)
-
-            data_dict = data_dict["data"]
-            number_articles = len(data_dict)
-            total = 0
-            context_counter = 0
-            counter_del = 0
-            self.data = []
-            
-            # remove all too long paragraphs
-            for article in range(number_articles):
-                cur_number_context = len(data_dict[article]["paragraphs"])
-                # print(f"This is article number {article}")
-                # print(cur_number_context)
-                cont_this_article = 0
-                for context in range(cur_number_context -1, -1, -1):
-                    
-                    context_counter += 1
-                    context_string = data_dict[article]["paragraphs"][context]["context"]
-                    tokens = self.tokenizer.tokenize(context_string)
-                    context_len = len(tokens)
-                    if context_len > (self.seq_len - 2):
-                        del data_dict[article]["paragraphs"][context]
-                        counter_del += 1
-                    else:
-                        self.data.append({ "data" : data_dict[article]["paragraphs"][context], "article_number": article, "bw_context_number": cont_this_article })
-                        cont_this_article += 1
-            
-            self.data.reverse()
-            self.data_dict = data_dict
-            
-            print(f"Deleted {counter_del} too short contexts of {context_counter} total contexts")
-            
-            packed_data = {"data_save" : self.data, "data_dict": self.data_dict}
-
-            pickle.dump(packed_data, open(self.corpus_path / "build_docs_train.p", "wb"))
-            print("Saved Dataset with Pickle")
-        
-        else:
-            packed_data = pickle.load( open(self.corpus_path / "build_docs_train.p", "rb"))
-
-            self.data = packed_data["data_save"]
-            self.data_dict = packed_data["data_dict"]
-
-            print("Loaded Dataset with Pickle")
-
-
-    def __len__(self):
-        # last line of doc won't be used, because there's no "nextSentence". Additionally, we start counting at 0.
-        return len(self.data)
-
-    def __getitem__(self, item):
-        cur_id = self.sample_counter
-        self.sample_counter += 1
-        
-        example = self.data[item]
-        data_example = example["data"]
-        article_number = example["article_number"]
-        bw_context_number = example["bw_context_number"]
-        # get the context and tokenize it
-        true_context = self.tokenizer.tokenize(data_example["context"])
-
-        # sample fake context, except for out of doc context
-        cur_article = self.data_dict[article_number]["paragraphs"]
-        number_paragraphs = len(cur_article)
-        fw_context_number = number_paragraphs - bw_context_number - 1
-        assert (fw_context_number > -0.5)
-        context_list = [true_context]
-
-
-        # insert_pos = random.randrange(0, ((self.fake_context + 1)* self.out_doc_mult)+1)
-        already_drawn = [fw_context_number]
-
-        for fakes in range(self.fake_context):
-            draw = fw_context_number
-            while draw in already_drawn:
-                draw = random.randrange(0, number_paragraphs)
-            
-            already_drawn.append(draw)
-            drawn_para = cur_article[draw]["context"]
-            context_list.append(self.tokenizer.tokenize(drawn_para))
-
-        random.shuffle(context_list)
-
-        # sample out of doc context
-
-        # get the questions, tokenize them, randomly sample enough to fit seq length, put them into a list of lists 
-        question_dict_list = data_example["qas"]
-        question_list = []
-        answer_list = []
-        qa_len = 0
-        random.shuffle(question_dict_list)
-        #print(question_dict_list)
-        #import pdb; pdb.set_trace()
-        for question in question_dict_list:
-            question_tokens = self.tokenizer.tokenize(question["question"])
-            is_impossible = question["is_impossible"]
-            if not is_impossible:
-                answer_tokens = self.tokenizer.tokenize(question["answers"][0]["text"])
-            else:
-                answer_tokens = []
-
-            if (len(question_tokens) + self.answer_size + self.qa_extra_tokens + qa_len ) < (self.seq_len - 2):
-                if not is_impossible and len(answer_tokens) <= self.answer_size :
-                    question_list.append(question_tokens)
-                    answer_list.append(answer_tokens)
-                    qa_len += len(question_tokens) + self.answer_size + self.qa_extra_tokens
-   
-            else:
-                break
-
-            if len(question_list) == self.max_questions:
-                break
-
-
-
-
-        # transform sample to features
-        context_example_list, question_example = convert_example_to_features(context_list, question_list, answer_list, self.sample_counter, self.seq_len, self.tokenizer, self.answer_size)
-
-        # cur_tensors = (torch.tensor(cur_features.input_ids),
-        #                torch.tensor(cur_features.input_mask),
-        #                torch.tensor(cur_features.segment_ids),
-        #                torch.tensor(cur_features.lm_label_ids),
-        #                )
-
-        return [input_example.release_features() for input_example in context_example_list] , question_example.release_features()
-
-
-
-
-
-
-class InputExample(object):
-    """A single training/test example for the language model."""
-
-    def __init__(self, guid, tokens_a, tokens_b=None, is_next=None, lm_labels=None):
-        """Constructs a InputExample.
-
-        Args:
-            guid: Unique id for the example.
-            tokens_a: string. The untokenized text of the first sequence. For single
-            sequence tasks, only this sequence must be specified.
-            tokens_b: (Optional) string. The untokenized text of the second sequence.
-            Only must be specified for sequence pair tasks.
-            label: (Optional) string. The label of the example. This should be
-            specified for train and dev examples, but not for test examples.
-        """
-        self.guid = guid
-        self.tokens_a = tokens_a
-        self.tokens_b = tokens_b
-        self.is_next = is_next  # nextSentence
-        self.lm_labels = lm_labels  # masked words for language model
-
-
-class InputFeatures(object):
-    """A single set of features of data."""
-
-    def __init__(self, input_ids, input_mask, segment_ids, lm_label_ids):
-        self.input_ids = input_ids
-        self.input_mask = input_mask
-        self.segment_ids = segment_ids
-        self.lm_label_ids = lm_label_ids
-
-    def release_features(self):
-        cur_tensors = (torch.tensor(self.input_ids),
-                        torch.tensor(self.input_mask),
-                        torch.tensor(self.segment_ids),
-                        torch.tensor(self.lm_label_ids))
-        return cur_tensors
-
-
-def convert_example_to_features(context_list, question_list, answer_list, cur_time, max_seq_length, tokenizer, answer_size):
-    """
-    Convert a raw sample (pair of sentences as tokenized strings) into a proper training sample with
-    IDs, LM labels, input_mask, CLS and SEP tokens etc.
-    :param example: InputExample, containing sentence input as strings and is_next label
-    :param max_seq_length: int, maximum length of sequence.
-    :param tokenizer: Tokenizer
-    :return: InputFeatures, containing all inputs and labels of one sample as IDs (as used for model training)
-    """
-
-    # Modifies `tokens_a` and `tokens_b` in place so that the total
-    # length is less than the specified length.
-    # Account for [CLS], [SEP], [SEP] with "- 3"
-
-    #import pdb; pdb.set_trace()
-
-
-
-    for contexts in context_list:
-        contexts.insert(0, "[CLS]")
-        contexts.append("[SEP]")
-
-
-    question_text = ["[CLS]"]
-    label_text = [-1]
-    for qid, question in enumerate(question_list):
-        question_text.append("question")
-        question_text.append(":")
-
-        question_text.extend(question)
-        label_text.extend([-1] * (len(question) + 4))
-
-        question_text.append("answer")
-        question_text.append(":")
-
-        question_text.extend(["[MASK]"]* answer_size)
-
-        answer_ids = tokenizer.convert_tokens_to_ids(answer_list[qid])
-        label_text.extend(answer_ids)
-        label_text.extend([tokenizer.vocab["."]]*(answer_size - len(answer_list[qid])))
-
-    
-    question_text.append("[SEP]")
-    saved_tokens_question = question_text.copy()
-    label_text.append(-1)
-
-    question_text = tokenizer.convert_tokens_to_ids(question_text)
-    context_list = [tokenizer.convert_tokens_to_ids(x) for x in context_list]
-
-    # lm_label_ids = ([-1] + t1_label + [-1])
-
-    # tokens = []
-    # segment_ids = []
-    # tokens.append("[CLS]")
-    # segment_ids.append(0)
-
-    # for token in tokens_a:
-    #     tokens.append(token)
-    #     segment_ids.append(0)
-
-    # tokens.append("[SEP]")
-    # segment_ids.append(0)
-
-
-    q_input_mask = [1] * len(question_text)
-    q_segment_ids = [0] * len(question_text)
-    q_lm_label_ids = label_text
-    while len(question_text) < max_seq_length:
-        question_text.append(0)
-        q_input_mask.append(0)
-        q_segment_ids.append(0)
-        q_lm_label_ids.append(-1)
-    
-    assert len(question_text) == max_seq_length
-    assert len(q_input_mask) == max_seq_length
-    assert len(q_segment_ids) == max_seq_length
-    assert len(q_lm_label_ids) == max_seq_length
-
-
-    question_example = InputFeatures(input_ids = question_text, input_mask = q_input_mask, segment_ids = q_segment_ids, lm_label_ids = q_lm_label_ids)
-    
-    context_example_list = []
-    for context in context_list:
-
-        c_input_mask = [1] * len(context)
-        c_segment_ids = [0] * len(context)
-        c_lm_label_ids = [-1] * len(context)
-        while len(context) < max_seq_length:
-            context.append(0)
-            c_input_mask.append(0)
-            c_segment_ids.append(0)
-            c_lm_label_ids.append(-1)
-        
-
-        assert len(context) == max_seq_length
-        assert len(c_input_mask) == max_seq_length
-        assert len(c_segment_ids) == max_seq_length
-        assert len(c_lm_label_ids) == max_seq_length
-
-        context_example = InputFeatures(input_ids = context, input_mask = c_input_mask, segment_ids = c_segment_ids, lm_label_ids = c_lm_label_ids)
-        context_example_list.append(context_example)
-
-    #input_ids = tokenizer.convert_tokens_to_ids(tokens)
-
-    # The mask has 1 for real tokens and 0 for padding tokens. Only real
-    # tokens are attended to.
-    # input_mask = [1] * len(input_ids)
-
-    # # Zero-pad up to the sequence length.
-    # while len(input_ids) < max_seq_length:
-    #     input_ids.append(0)
-    #     input_mask.append(0)
-    #     segment_ids.append(0)
-    #     lm_label_ids.append(-1)
-
-    # print("input, segment, lmlabel")
-    # print(len(input_ids))
-    # print(len(segment_ids))
-    # print(len(lm_label_ids))
-
-    # assert len(input_ids) == max_seq_length
-    # assert len(input_mask) == max_seq_length
-    # assert len(segment_ids) == max_seq_length
-    # assert len(lm_label_ids) == max_seq_length
-
-    if cur_time < 5:
-        logger.info("*** Example for the Questions***")
-        logger.info("cur_time: %s" % (cur_time))
-        logger.info("tokens: %s" % " ".join(
-                [str(x) for x in saved_tokens_question ]))
-        logger.info("input_ids: %s" % " ".join([str(x) for x in question_text]))
-        logger.info("input_mask: %s" % " ".join([str(x) for x in q_input_mask]))
-        logger.info(
-                "segment_ids: %s" % " ".join([str(x) for x in q_segment_ids]))
-        logger.info("LM label: %s " % (q_lm_label_ids))
-
-    # features = InputFeatures(input_ids=input_ids,
-    #                          input_mask=input_mask,
-    #                          segment_ids=segment_ids,
-    #                          lm_label_ids=lm_label_ids,
-    #                          )
-    return context_example_list, question_example
-
-
-def truncate_seq_pair(tokens_a, max_length):
-    """Truncates a sequence pair in place to the maximum length."""
-
-    # This is a simple heuristic which will always truncate the longer sequence
-    # one token at a time. This makes more sense than truncating an equal percent
-    # of tokens from each, since if one sequence is very short then each token
-    # that's truncated likely contains more information than a longer sequence.
-    while True:
-        total_length = len(tokens_a)
-        if total_length <= max_length:
-            break
-        else:
-            tokens_a.pop()
-    return tokens_a
-
-
-
-def random_word(tokens, tokenizer):
-    """
-    Masking some random tokens for Language Model task with probabilities as in the original BERT paper.
-    :param tokens: list of str, tokenized sentence.
-    :param tokenizer: Tokenizer, object used for tokenization (we need it's vocab here)
-    :return: (list of str, list of int), masked tokens and related labels for LM prediction
-    """
-    output_label = []
-
-    # changed to always remove 15% of words
-
-    for i, token in enumerate(tokens):
-        prob = random.random()
-        # mask token with 15% probability
-        if prob < 0.15:
-            prob /= 0.15
-
-            tokens[i] = "[MASK]"
-
-            # append current token to output (we will predict these later)
-            try:
-                output_label.append(tokenizer.vocab[token])
-            except KeyError:
-                # For unknown words (should not occur with BPE vocab)
-                output_label.append(tokenizer.vocab["[UNK]"])
-                logger.warning("Cannot find token '{}' in vocab. Using [UNK] insetad".format(token))
-        else:
-            # no masking token (will be ignored by loss function later)
-            output_label.append(-1)
-
-    return tokens, output_label
-
-
-
-
-def load_weights_from_state(model, state_dict):
-
-    missing_keys = []
-    unexpected_keys = []
-    error_msgs = []
-    # copy state_dict so _load_from_state_dict can modify it
-    metadata = getattr(state_dict, '_metadata', None)
-    state_dict = state_dict.copy()
-    if metadata is not None:
-        state_dict._metadata = metadata
-
-    def load(module, prefix=''):
-        local_metadata = {} if metadata is None else metadata.get(prefix[:-1], {})
-        module._load_from_state_dict(
-            state_dict, prefix, local_metadata, True, missing_keys, unexpected_keys, error_msgs)
-        for name, child in module._modules.items():
-            if child is not None:
-                load(child, prefix + name + '.')
-    start_prefix = ''
-    if not hasattr(model, 'bert') and any(s.startswith('bert.') for s in state_dict.keys()):
-        start_prefix = 'bert.'
-    load(model, prefix=start_prefix)
-    if len(missing_keys) > 0:
-        logger.info("Weights of {} not initialized from pretrained model: {}".format(
-            model.__class__.__name__, missing_keys))
-    if len(unexpected_keys) > 0:
-        logger.info("Weights from pretrained model not used in {}: {}".format(
-            model.__class__.__name__, unexpected_keys))
-    if len(error_msgs) > 0:
-        raise RuntimeError('Error(s) in loading state_dict for {}:\n\t{}'.format(
-                            model.__class__.__name__, "\n\t".join(error_msgs)))
-    return model
-
-
-
-
-
-
-
-
-
 
 
 
@@ -593,7 +117,7 @@ def main():
                         action='store_true',
                         help="Whether to run training.")
     parser.add_argument("--train_batch_size",
-                        default=64,
+                        default=16,
                         type=int,
                         help="Total batch size for training.")
     parser.add_argument("--learning_rate",
@@ -693,6 +217,13 @@ def main():
     parser.add_argument('--dropout',
                         type = float, default = 0.1,
                         help = "Dropout in bert and in DNC")
+    parser.add_argument("--task", default="wikitext", type=str, required=False,
+                        help="Either squad or wikitext task mode")
+    parser.add_argument('--reset_step',
+                type=int,
+                default=2,
+                help="for wikitext, after how many steps to repackage hidden")
+
     args = parser.parse_args()
 
 
@@ -717,14 +248,20 @@ def main():
     logger.info("device: {} n_gpu: {}, distributed training: {}, 16-bits training: {}".format(
         device, n_gpu, bool(args.local_rank != -1), args.fp16))
 
-    if args.download and args.do_train:
-        filename = maybe_download(_TRAINDIR, _TRAINFILE, _URL)
-    if args.download and args.do_eval:
-        filename = maybe_download(_TESTDIR, _TESTFILE, _DEV_URL)
+
+    if args.task == "squad":
+        if args.download and args.do_train:
+            filename = maybe_download(_TRAINDIR, _TRAINFILE, _URL)
+        if args.download and args.do_eval:
+            filename = maybe_download(_TESTDIR, _TESTFILE, _DEV_URL)
+    elif args.task == "wikitext":
+        if args.download:
+            filename = maybe_download(_WIKIFOLDER, _WIKIZIPFILE, _WIKIURL)
+            prepare_wikitext(_WIKIZIPFILE, _WIKIFOLDER, _TRAINDIRWIKI, _DEVDIRWIKI, _WIKITRAINTOKENS, _WIKIDEVTOKENS, _WIKIFOLD)
+
 
     lower_case = not args.do_upper_case
     tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case= lower_case)
-
     mask_token_number = tokenizer.vocab["[MASK]"]
     # first ist pretrained bert, second is ut following
     config = BertConfig(30522)
@@ -739,7 +276,10 @@ def main():
 
     if args.do_train:
 
-        train_dataset = LambadaTrain(_TRAINDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, fake_context = args.fake_context)
+        if args.task == "squad":
+            train_dataset = SquadTrain(_TRAINDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, fake_context = args.fake_context)
+        elif args.task == "wikitext":
+            train_dataset = WikitextTrain(_TRAINDIRWIKI, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, batch_size = args.train_batch_size // args.gradient_accumulation_steps)
 
         # corpus_path, tokenizer, seq_len, encoding="utf-8", corpus_lines=None,  rebuild=True
         #         , short_factor = 1, distribute_context_over = 1, fake_context=0, out_doc_mult = 1
@@ -955,13 +495,20 @@ def main():
         logger.info("  Batch size = %d", args.train_batch_size)
         logger.info("  Num steps = %d", num_train_optimization_steps)
 
-        if args.local_rank == -1:
-            train_sampler = RandomSampler(train_dataset)
-        else:
-            #TODO: check if this works with current data generator from disk that relies on next(file)
-            # (it doesn't return item back by index)
-            train_sampler = DistributedSampler(train_dataset)
-        train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+        if args.task == "squad":
+            if args.local_rank == -1:
+                train_sampler = RandomSampler(train_dataset)
+            else:
+                #TODO: check if this works with current data generator from disk that relies on next(file)
+                # (it doesn't return item back by index)
+                train_sampler = DistributedSampler(train_dataset)
+            train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+
+        elif args.task == "wikitext":
+            datalen = len(train_dataset)
+            train_dataloader = range(datalen)
+
+
 
         if args.tensorboard:
             model.ut.encoder.layer.inter_results = args.inter_results
@@ -976,7 +523,11 @@ def main():
             loss_ema = 0
             acc_ema = 0
             best_acc_ema = 0
+
             lendata =len(train_dataloader)
+
+            if args.task == "wikitext":
+                train_dataset.pos = 0
 
             if args.model_type == "UTafterBertPretrained":
                 model.bert.eval()
@@ -1003,7 +554,13 @@ def main():
                 if args.tensorboard:
                     model.ut.encoder.layer.outer_steps = step
 
-                context_example_list, question_example = batch
+                if args.task == "squad":
+                    context_example_list, question_example = batch
+                elif args.task == "wikitext":
+                    context_example_list, question_example = train_dataset.get_batch()
+
+
+
                 question_example = tuple(t.to(device) for t in question_example)
                 context_example_list = [tuple(t.to(device) for t in context_example) for context_example in context_example_list]
 
@@ -1017,23 +574,50 @@ def main():
                         erase_memory = False
 
                     input_ids, input_mask, segment_ids, lm_label_ids  = context
-
                     _, _ = model(input_ids, segment_ids, input_mask, lm_label_ids , reset_memory=reset_memory, erase_memory=erase_memory)
 
-                
+                if args.task == "squad":
+                    q_reset = False
+                    q_erase = False
+                elif args.task == "wikitext":
+                    if step % args.reset_step == 0:
+                        accumulated_loss = 0
+                        q_reset = True
+                        q_erase = False
+
+                    else:
+                        q_reset = False
+                        q_reset = False
+
+
+
                 # question and answer
                 input_ids, input_mask, segment_ids, lm_label_ids  = question_example
-                loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=False, erase_memory=False)
 
-
-                if n_gpu > 1:
-                    loss = loss.mean() # mean() to average on multi-gpu.
-                if args.gradient_accumulation_steps > 1:
-                    loss = loss / args.gradient_accumulation_steps
-                if args.fp16:
-                    optimizer.backward(loss)
+                if args.model_type == "UTafterBertPretrained":
+                    loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids)
                 else:
-                    loss.backward()
+                    loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=q_reset, erase_memory=q_erase)
+
+                if args.task == "wikitext":
+                    accumulated_loss += loss
+
+
+                if args.task == "wikitext" and step % args.reset_step == (args.reset_step - 1):
+                    if args.gradient_accumulation_steps > 1:
+                        accumulated_loss = accumulated_loss / args.gradient_accumulation_steps
+                    accumulated_loss =  accumulated_loss / args.reset_step
+                    accumulated_loss.backward()
+
+                if args.task == "squad":
+                    if n_gpu > 1:
+                        loss = loss.mean() # mean() to average on multi-gpu.
+                    if args.gradient_accumulation_steps > 1:
+                        loss = loss / args.gradient_accumulation_steps
+                    if args.fp16:
+                        optimizer.backward(loss)
+                    else:
+                        loss.backward()
             
                 losscpu = loss.item()
                 print(f"Step {global_step} loss: {losscpu} ")
@@ -1095,40 +679,48 @@ def main():
 
                 nb_tr_examples += input_ids.size(0)
                 nb_tr_steps += 1
-                if step % args.gradient_accumulation_steps == 0:
-                    # if args.fp16:
-                    #     # modify learning rate with special warm up BERT uses
-                    #     # if args.fp16 is False, BertAdam is used that handles this automatically
-                    #     lr_this_step = args.learning_rate * warmup_linear(global_step/num_train_optimization_steps, args.warmup_proportion)
-                    #     hyperparams["learning_rate"] = lr_this_step
-                    #     for param_group in optimizer.param_groups:
-                    #         param_group['lr'] = lr_this_step
-                    optimizer.step()
-                    optimizer.zero_grad()
-                    experiment.log_metric("current_lr", optimizer.current_lr , step = global_step)
-                    global_step += 1
+                global_step += 1
+                if args.task == "squad" or step % args.reset_step == (args.reset_step - 1):
 
-                    if step  % 2500 == 0:
-                        if acc_ema > best_acc_ema:
-                            best_acc_ema = acc_ema
-                            if not os.path.exists(_MODELS):
-                                os.makedirs(_MODELS)
-                            if not os.path.exists(_MODELS/ args.output_dir):
-                                os.makedirs( _MODELS / args.output_dir)
-                            output_model_file = os.path.join(_MODELS , args.output_dir, "checkpoint.pt")
-                            torch.save(model.state_dict(), output_model_file)
-                            logger.info(f"Created new checkpoint")
+                    if step % args.gradient_accumulation_steps == 0:
+                        # if args.fp16:
+                        #     # modify learning rate with special warm up BERT uses
+                        #     # if args.fp16 is False, BertAdam is used that handles this automatically
+                        #     lr_this_step = args.learning_rate * warmup_linear(global_step/num_train_optimization_steps, args.warmup_proportion)
+                        #     hyperparams["learning_rate"] = lr_this_step
+                        #     for param_group in optimizer.param_groups:
+                        #         param_group['lr'] = lr_this_step
+                        optimizer.step()
+                        optimizer.zero_grad()
+                        experiment.log_metric("current_lr", optimizer.current_lr , step = global_step)
+                        
 
-            # here start eval each epoch
+                        if step  % 2500 == 0:
+                            if acc_ema > best_acc_ema:
+                                best_acc_ema = acc_ema
+                                if not os.path.exists(_MODELS):
+                                    os.makedirs(_MODELS)
+                                if not os.path.exists(_MODELS/ args.output_dir):
+                                    os.makedirs( _MODELS / args.output_dir)
+                                output_model_file = os.path.join(_MODELS , args.output_dir, "checkpoint.pt")
+                                torch.save(model.state_dict(), output_model_file)
+                                logger.info(f"Created new checkpoint")
+
+                # here start eval each epoch
 
 
                     
             if args.do_eval:  
 
-                test_dataset = LambadaTrain(_TESTDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, fake_context = args.fake_context)
-                test_sampler = RandomSampler(test_dataset)
-                test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=args.train_batch_size)
-
+                if args.task == "squad":
+                    test_dataset = SquadTrain(_TESTDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, fake_context = args.fake_context)
+                    test_sampler = RandomSampler(test_dataset)
+                    test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=args.train_batch_size)
+                elif args.task == "wikitext":
+                    test_dataset = WikitextTrain(_TRAINDIRWIKI, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, batch_size = args.train_batch_size // args.gradient_accumulation_steps, variable_seq = False)
+                    datalen = len(test_dataset)
+                    test_dataloader = range(datalen)
+                    test_dataset.pos = 0
                 model.eval()
                 with torch.no_grad():
                     for _ in trange(1, desc="Epoch"):
@@ -1140,6 +732,7 @@ def main():
                         for step, batch in enumerate(tqdm(test_dataloader, desc="Iteration")):
                             if step == lentest or step == lentest-1:
                                 break
+                            
 
                             context_example_list, question_example = batch
                             question_example = tuple(t.to(device) for t in question_example)

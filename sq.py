@@ -505,7 +505,7 @@ def main():
             train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
 
         elif args.task == "wikitext":
-            datalen = len(train_dataset)
+            datalen = len(train_dataset) // args.max_seq_length
             train_dataloader = range(datalen)
 
 

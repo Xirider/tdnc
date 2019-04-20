@@ -12,3 +12,4 @@ wikitext-103-raw/wiki_train/build_docs.p
 *.pyc
 *.pyc
 __pycache__/tokenization.cpython-36.pyc
+__pycache__/tokenization.cpython-36.pyc

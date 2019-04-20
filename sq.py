@@ -70,7 +70,7 @@ _WIKIURL = "https://s3.amazonaws.com/research.metamind.io/wikitext/" + _WIKIZIPF
 _WIKITRAINTOKENS = "wiki.train.raw"
 _WIKIDEVTOKENS = "wiki.valid.raw"
 
-_EMA_ALPHA = 0.025
+_EMA_ALPHA = 0.005
 
 
 

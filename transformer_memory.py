@@ -25,6 +25,23 @@ class BertLayerNorm(nn.Module):
         x = (x - u) / T.sqrt(s + self.variance_epsilon)
         return self.weight * x + self.bias
 
+class PositionalEmbedding(nn.Module):
+    def __init__(self, demb):
+        super(PositionalEmbedding, self).__init__()
+
+        self.demb = demb
+
+        inv_freq = 1 / (50000 ** (torch.arange(0.0, demb, 2.0) / demb))
+        self.register_buffer('inv_freq', inv_freq)
+
+    def forward(self, pos_seq, bsz=None):
+        sinusoid_inp = torch.ger(pos_seq, self.inv_freq)
+        pos_emb = torch.cat([sinusoid_inp.sin(), sinusoid_inp.cos()], dim=-1)
+
+        return pos_emb[None,:,:].expand(bsz,-1, self.demb)
+
+
+
 class SparseMemory(nn.Module):
 
   def __init__(
@@ -43,7 +60,8 @@ class SparseMemory(nn.Module):
       read_gate=False,
       read_strength = True,
       calc_with_read = False,
-      dropout = 0.
+      dropout = 0. ,
+      positional_embeddings = True
       #x added direct write, independent false
   ):
     super(SparseMemory, self).__init__()
@@ -68,6 +86,7 @@ class SparseMemory(nn.Module):
     self.read_gate = read_gate
     #n needs to be exchanged to true token lenght
     # self.input_size = self.input_size // 2
+    self.positional_embeddings = positional_embeddings
 
     self.calc_with_read = calc_with_read
 
@@ -83,6 +102,10 @@ class SparseMemory(nn.Module):
     #self.spiky = 500000
     # The visible memory size: (K * R read heads, and least used memory cell)
     self.c = (self.K * r) + 1
+
+
+    if self.positional_embeddings:
+      self.pos_embedding = PositionalEmbedding(self.input_size)
 
     # if self.independent_linears:
     #   if self.gpu_id != -1:
@@ -663,6 +686,10 @@ class SparseMemory(nn.Module):
 
     else:
       read_gate = None
+    
+    if self.positional_embeddings:
+      posembeddings = self.pos_embedding(s, b)
+
 
     hidden = self.write(interpolation_gate, write_vector, write_gate, hidden, attention_mask)
 

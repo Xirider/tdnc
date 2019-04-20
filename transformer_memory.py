@@ -31,7 +31,7 @@ class PositionalEmbedding(nn.Module):
 
         self.demb = demb
 
-        inv_freq = 1 / (50000 ** (torch.arange(0.0, demb, 2.0) / demb))
+        inv_freq = 1 / (10000 ** (torch.arange(0.0, demb, 2.0) / demb))
         self.register_buffer('inv_freq', inv_freq)
 
     def forward(self, pos_seq, bsz=None):
@@ -237,6 +237,8 @@ class SparseMemory(nn.Module):
       }
       hidden = self.rebuild_indexes(hidden, erase=False)
       self.timestep = 0
+      #self.curr_writing_pos = 0
+
     elif not erase:
       hidden["memory"] = hidden["memory"].clone().detach()
       hidden["visible_memory"] = hidden["visible_memory"].clone().detach()
@@ -268,6 +270,7 @@ class SparseMemory(nn.Module):
       }
       hidden = self.rebuild_indexes(hidden, erase=False)
       self.timestep = 0
+      #self.curr_writing_pos = 0
 
       # if erase:
       #   hidden["memory"].data.fill_(δ)
@@ -624,6 +627,15 @@ class SparseMemory(nn.Module):
     #   # write gate (b * 1)
     #   write_gate = F.sigmoid(self.write_gate_transform(ξ).view(b, 1))
     # else:
+    if self.positional_embeddings:
+      ranges = torch.full((1,s),self.timestep).squeeze().cuda()
+      #ranges = torch.arange(start = self.curr_writing_pos, end =self.curr_writing_pos + s, dtype = torch.long)
+      posembeddings = self.pos_embedding(ranges,b)
+      if not self.direct_write:
+        e += posembeddings
+
+    self.timestep += 1
+
     ξ = self.interface_weights(e)
 
     if self.read_strength and self.read_gate and not self.calc_with_read:
@@ -642,7 +654,7 @@ class SparseMemory(nn.Module):
     read_query = ξ[:, :, :r * w].contiguous().view(b, s, r, w)
     # write key (b * 1 * w)
 
-    self.timestep += 1
+    
     
     #x changed order to first read then write
     read_vectors, hidden = self.read(read_query, hidden, attention_mask)
@@ -688,13 +700,14 @@ class SparseMemory(nn.Module):
       read_gate = None
     
     if self.positional_embeddings:
-      posembeddings = self.pos_embedding(s, b)
-
+      write_vector = write_vector + posembeddings
 
     hidden = self.write(interpolation_gate, write_vector, write_gate, hidden, attention_mask)
 
     if self.read_gate:
       read_vectors = read_vectors * read_gate.expand(b,s,w)
+    
+    
 
     return read_vectors, hidden, interpolation_gate, write_gate, read_gate
     # hidden = self.write(interpolation_gate, write_vector, write_gate, hidden)

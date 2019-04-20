@@ -700,7 +700,7 @@ class SparseMemory(nn.Module):
       read_gate = None
     
     if self.positional_embeddings:
-      write_vector = write_vector + posembeddings
+      write_vector = write_vector + posembeddings.unsqueeze(2)
 
     hidden = self.write(interpolation_gate, write_vector, write_gate, hidden, attention_mask)
 

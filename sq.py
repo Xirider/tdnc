@@ -695,16 +695,16 @@ def main():
                         experiment.log_metric("current_lr", optimizer.current_lr , step = global_step)
                         
 
-                        if step  % 2500 == 0:
-                            if acc_ema > best_acc_ema:
-                                best_acc_ema = acc_ema
-                                if not os.path.exists(_MODELS):
-                                    os.makedirs(_MODELS)
-                                if not os.path.exists(_MODELS/ args.output_dir):
-                                    os.makedirs( _MODELS / args.output_dir)
-                                output_model_file = os.path.join(_MODELS , args.output_dir, "checkpoint.pt")
-                                torch.save(model.state_dict(), output_model_file)
-                                logger.info(f"Created new checkpoint")
+                        if step  % 5000 == 0:
+                            # if acc_ema > best_acc_ema:
+                            #     best_acc_ema = acc_ema
+                            if not os.path.exists(_MODELS):
+                                os.makedirs(_MODELS)
+                            if not os.path.exists(_MODELS/ args.output_dir):
+                                os.makedirs( _MODELS / args.output_dir)
+                            output_model_file = os.path.join(_MODELS , args.output_dir, "checkpoint.pt")
+                            torch.save(model.state_dict(), output_model_file)
+                            logger.info(f"Created new checkpoint")
 
                 # here start eval each epoch
 

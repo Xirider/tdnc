@@ -223,7 +223,9 @@ def main():
                 type=int,
                 default=2,
                 help="for wikitext, after how many steps to repackage hidden")
-
+    parser.add_argument("--train_full",
+                action='store_true',
+                help="train the full network instead of just the Ut part")
     args = parser.parse_args()
 
 
@@ -454,6 +456,10 @@ def main():
         print("updating only ut part")
         if args.cls_train:
             param_optimizer.extend(list(model.cls.named_parameters()))
+            "updating also cls part"
+    if args.train_full:
+        param_optimizer = list(model.named_parameters())
+        print("updating all parameters")
 
     else:
         param_optimizer = list(model.named_parameters())
@@ -545,6 +551,8 @@ def main():
                 if args.cls_train:
                     model.cls.train()
 
+            if args.train_full:
+                model.train()
 
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
 
@@ -584,6 +592,9 @@ def main():
                         accumulated_loss = 0
                         q_reset = True
                         q_erase = False
+                        prob = random.random()
+                        if prob > 0.995:
+                            q_erase = True
 
                     else:
                         q_reset = False

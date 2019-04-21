@@ -514,9 +514,9 @@ def main():
                 help="whether to use read gate")
     parser.add_argument("--read_token_type", default="concat", type=str, required=False,
                         help="The read tokens can be either concat, added or added and scaled to the original tokens")
-    parser.add_argument("--resume",
+    parser.add_argument("--train_full",
                 action='store_true',
-                help="resume from last checkpoint with the same folder name")
+                help="train the full network instead of just the Ut part")
     args = parser.parse_args()
 
 

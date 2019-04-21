@@ -495,7 +495,7 @@ def main():
     
 
     global_step = 0
-    if args.do_train:
+    if args.do_train or args.do_eval:
         logger.info("***** Running training *****")
         logger.info("  Num examples = %d", len(train_dataset))
         logger.info("  Batch size = %d", args.train_batch_size)
@@ -555,6 +555,9 @@ def main():
                 model.train()
 
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
+                
+                if not args.do_train:
+                    break
 
                 if step == lendata or step == lendata-1:
                     break

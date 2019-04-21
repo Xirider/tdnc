@@ -278,10 +278,14 @@ def main():
 
     if args.do_train or args.do_eval:
 
+        should_rebuild = args.rebuild
+        if not args.do_train:
+            should_rebuild = False
+
         if args.task == "squad":
-            train_dataset = SquadTrain(_TRAINDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, fake_context = args.fake_context)
+            train_dataset = SquadTrain(_TRAINDIR, tokenizer, seq_len = args.max_seq_length, rebuild=should_rebuild, short_factor= args.short_factor, fake_context = args.fake_context)
         elif args.task == "wikitext":
-            train_dataset = WikitextTrain(_TRAINDIRWIKI, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, batch_size = args.train_batch_size // args.gradient_accumulation_steps)
+            train_dataset = WikitextTrain(_TRAINDIRWIKI, tokenizer, seq_len = args.max_seq_length, rebuild=should_rebuild, short_factor= args.short_factor, batch_size = args.train_batch_size // args.gradient_accumulation_steps)
 
         # corpus_path, tokenizer, seq_len, encoding="utf-8", corpus_lines=None,  rebuild=True
         #         , short_factor = 1, distribute_context_over = 1, fake_context=0, out_doc_mult = 1

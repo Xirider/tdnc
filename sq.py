@@ -276,7 +276,7 @@ def main():
 
     num_train_optimization_steps = None
 
-    if args.do_train:
+    if args.do_train or args.do_eval:
 
         if args.task == "squad":
             train_dataset = SquadTrain(_TRAINDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, fake_context = args.fake_context)

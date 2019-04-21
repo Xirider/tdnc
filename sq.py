@@ -722,15 +722,18 @@ def main():
 
                     
             if args.do_eval:  
+                
 
                 if args.task == "squad":
                     test_dataset = SquadTrain(_TESTDIR, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, fake_context = args.fake_context)
                     test_sampler = RandomSampler(test_dataset)
                     test_dataloader = DataLoader(test_dataset, sampler=test_sampler, batch_size=args.train_batch_size)
+                    lentest = len(test_dataloader)
                 elif args.task == "wikitext":
-                    test_dataset = WikitextTrain(_TRAINDIRWIKI, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, batch_size = args.train_batch_size // args.gradient_accumulation_steps, variable_seq = False)
-                    datalen = len(test_dataset)
+                    test_dataset = WikitextTrain(_DEVDIRWIKI, tokenizer, seq_len = args.max_seq_length, rebuild=args.rebuild, short_factor= args.short_factor, batch_size = args.train_batch_size // args.gradient_accumulation_steps, variable_seq = False)
+                    datalen = len(test_dataset) // args.max_seq_length
                     test_dataloader = range(datalen)
+                    lentest = datalen
                     test_dataset.pos = 0
                 model.eval()
                 with torch.no_grad():
@@ -739,13 +742,15 @@ def main():
                         nb_test_examples, nb_test_steps = 0, 0
                         totalcounteri = 0
                         total_acc = 0
-                        lentest = len(test_dataloader)
                         for step, batch in enumerate(tqdm(test_dataloader, desc="Iteration")):
                             if step == lentest or step == lentest-1:
                                 break
-                            
 
-                            context_example_list, question_example = batch
+                            if args.task == "squad":
+                                context_example_list, question_example = batch
+                            elif args.task == "wikitext":
+                                context_example_list, question_example = test_dataset.get_batch()
+
                             question_example = tuple(t.to(device) for t in question_example)
                             context_example_list = [tuple(t.to(device) for t in context_example) for context_example in context_example_list]
 

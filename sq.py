@@ -269,7 +269,7 @@ def main():
     config = BertConfig(30522)
     config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, 
                             max_comp_length = args.max_comp_length, memory_size = args.memory_size, direct_write =args.direct_write, 
-                            read_gate=args.read_gate, read_token_type=args.read_token_type, calc_with_read=args.calc_with_read)
+                            read_gate=args.read_gate, read_token_type=args.read_token_type, calc_with_read=args.calc_with_read, hidden_dropout_prob = args.dropout)
 
     # to test without ut embeddings: , use_mask_embeddings=False, use_temporal_embeddings=False
     

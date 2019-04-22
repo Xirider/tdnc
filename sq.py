@@ -226,6 +226,9 @@ def main():
     parser.add_argument("--train_full",
                 action='store_true',
                 help="train the full network instead of just the Ut part")
+    parser.add_argument("--use_ut",
+            action='store_true',
+            help="train the full network instead of just the Ut part")
     args = parser.parse_args()
 
 
@@ -269,7 +272,7 @@ def main():
     config = BertConfig(30522)
     config2 = BertConfig(30522, num_hidden_layers= args.ut_layers, mask_token_number=mask_token_number, 
                             max_comp_length = args.max_comp_length, memory_size = args.memory_size, direct_write =args.direct_write, 
-                            read_gate=args.read_gate, read_token_type=args.read_token_type, calc_with_read=args.calc_with_read, hidden_dropout_prob = args.dropout)
+                            read_gate=args.read_gate, read_token_type=args.read_token_type, calc_with_read=args.calc_with_read, hidden_dropout_prob = args.dropout, use_ut = args.use_ut)
 
     # to test without ut embeddings: , use_mask_embeddings=False, use_temporal_embeddings=False
     
@@ -467,9 +470,11 @@ def main():
         print("updating all parameters")
 
     if args.train_full:
-        param_optimizer = list(model.named_parameters())
         for param in model.bert.parameters():
             param.requires_grad = True
+        for param in model.parameters():
+            param.requires_grad = True
+        param_optimizer = list(model.named_parameters())
         print("updating all parameters")
 
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
@@ -561,6 +566,10 @@ def main():
 
             if args.train_full:
                 model.train()
+                model.bert.train()
+                model.ut.train()
+                model.cls.train()
+
 
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
                 

@@ -158,7 +158,8 @@ class BertConfig(object):
                  direct_write=False,
                  read_gate=True,
                  read_token_type="concat",
-                 calc_with_read=False):
+                 calc_with_read=True,
+                 use_ut=True):
         """Constructs BertConfig.
 
         Args:
@@ -211,6 +212,7 @@ class BertConfig(object):
             self.read_gate = read_gate
             self.read_token_type = read_token_type
             self.calc_with_read = calc_with_read
+            self.use_ut = use_ut
 
         else:
             raise ValueError("First argument must be either a vocabulary size (int)"
@@ -824,6 +826,69 @@ class BertEncoderDNC(nn.Module):
         return all_encoder_layers
 
 
+
+class BertEncoderDNCnoUT(nn.Module):
+    def __init__(self, config):
+        super(BertEncoderDNCnoUT, self).__init__()
+
+
+        if config.read_token_type == "concat":
+            self.layer = BertLayerDNC(config)
+        elif config.read_token_type == "add":
+            self.layer = BertLayerAddDNC(config, scale_original_tokens=False)
+        elif config.read_token_type == "add_scale":
+            self.layer = BertLayerAddDNC(config, scale_original_tokens=True)
+        #print(config.read_token_type)
+        self.use_temporal_embeddings = True
+        assert config.use_temporal_embeddings == True
+            
+        self.hidden_layer_number = config.num_hidden_layers
+
+        self.layer = nn.ModuleList([copy.deepcopy(self.layer) for _ in range(config.num_hidden_layers)])
+
+
+
+        #self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
+
+    def forward(self, hidden_states, attention_mask, input_number, total_tokens, mask_positions, reset_memory, erase_memory, output_all_encoded_layers=True):
+        all_encoder_layers = []
+
+        for ut_time, layer in enumerate(self.layer):
+
+            hidden_states, attention_mask = layer(hidden_states, attention_mask, ut_time, input_number = input_number, total_tokens=total_tokens, 
+                                            mask_positions=mask_positions, reset_memory=reset_memory, erase_memory= erase_memory)
+
+            if output_all_encoded_layers:
+                all_encoder_layers.append(hidden_states)
+        if not output_all_encoded_layers:
+            all_encoder_layers.append(hidden_states)
+        return all_encoder_layers
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class BertPooler(nn.Module):
     def __init__(self, config):
         super(BertPooler, self).__init__()
@@ -1396,7 +1461,10 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
         self.encode_decode_embeddings = nn.Embedding(2, config.hidden_size)
 
-        self.encoder = BertEncoderDNC(config)
+        if config.use_ut:
+            self.encoder = BertEncoderDNC(config)
+        else:
+            self.encoder = BertEncoderDNCnoUT(config)
         self.apply(self.init_bert_weights)
         #nn.init.orthogonal_(self.encoder.layer.memory.interface_weights.weight)
 

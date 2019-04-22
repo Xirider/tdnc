@@ -468,6 +468,8 @@ def main():
 
     if args.train_full:
         param_optimizer = list(model.named_parameters())
+        for param in model.bert.parameters():
+            param.requires_grad = True
         print("updating all parameters")
 
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']

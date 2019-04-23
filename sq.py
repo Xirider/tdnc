@@ -148,7 +148,7 @@ def main():
                         help="local_rank for distributed training on gpus")
     parser.add_argument('--seed',
                         type=int,
-                        default=32,
+                        default=42,
                         help="random seed for initialization")
     parser.add_argument('--gradient_accumulation_steps',
                         type=int,
@@ -235,6 +235,10 @@ def main():
     hyperparams = args.__dict__
 
     experiment.log_parameters(hyperparams)
+
+
+    timestepbug = False
+
 
     if args.tensorboard:
         from tensorboardX import SummaryWriter
@@ -800,7 +804,8 @@ def main():
                                 erase_memory = True
                             else:
                                 # only because we have a timestep reset bug
-                                if step % args.reset_step == 0:
+
+                                if step % args.reset_step == 0 and timestepbug:
                                     reset_memory = True
                                     erase_memory = False
                                 else:

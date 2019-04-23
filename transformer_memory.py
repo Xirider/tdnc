@@ -201,8 +201,8 @@ class SparseMemory(nn.Module):
         #   i.reset()
         #   i.add(hidden["memory"][n], last=pos[-1])
 
-    else:
-      self.timestep = 0
+    # else:
+    #   self.timestep = 0
       #self.mem_limit_reached = False
 
     return hidden
@@ -244,10 +244,12 @@ class SparseMemory(nn.Module):
       hidden["visible_memory"] = hidden["visible_memory"].clone().detach()
       hidden["read_vectors"] = hidden["read_vectors"].clone().contiguous().detach()
       hidden["least_used_mem"] = hidden["least_used_mem"].clone().contiguous().detach()
-      hidden["usage"] = hidden["usage"].clone().contiguous().detach() / (self.timestep +1)
+      hidden["usage"] = hidden["usage"].clone().contiguous().detach() # / (self.timestep +1)
       hidden["read_positions"] = hidden["read_positions"].clone().detach()
       hidden = self.rebuild_indexes(hidden, erase)
-      self.timestep = 0
+
+      #self.timestep = 0
+      # two changes to remove timestep bug
 
 
     else:

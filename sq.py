@@ -444,6 +444,10 @@ def main():
 
             if args.cls_train:
                 model.cls.train()
+            
+            if not args.train_full:
+                for param in model.bert.parameters():
+                    param.requires_grad = False
 
         if args.model_type == "TDNCafterBertPretrained":
             model.bert.eval()
@@ -452,6 +456,9 @@ def main():
 
             if args.cls_train:
                 model.cls.train()
+            if not args.train_full:
+                for param in model.bert.parameters():
+                    param.requires_grad = False
 
 
 
@@ -706,7 +713,8 @@ def main():
                             writer.add_histogram(name, param.clone().cpu().data.numpy(), step)
                         
                         # writer.add_histogram(model.ut.encoder.layer.memory_hidden["memory"][0].abs().sum(1))
-                    if args.model_type == "TDNCafterBertPretrained": 
+                    if args.model_type == "TDNCafterBertPretrained" and args.use_ut: 
+
                         print(model.ut.encoder.layer.memory.saved_read_strength[0].mean(0))
                         print("Softmax distribution over 5 %")
                         print((model.ut.encoder.layer.memory.saved_read_softmax > 0.05).sum())

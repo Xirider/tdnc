@@ -795,8 +795,14 @@ def main():
 
                         
                         # question and answer
+                            if step == 0:
+                                reset_memory = True
+                                erase_memory = True
+                            else:
+                                reset_memory = False
+                                erase_memory = False
                             input_ids, input_mask, segment_ids, lm_label_ids  = question_example
-                            loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=False, erase_memory=False)
+                            loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=reset_memory, erase_memory=erase_memory)
 
 
 

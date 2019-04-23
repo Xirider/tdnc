@@ -630,7 +630,7 @@ def main():
                         q_reset = True
                         q_erase = False
                         prob = random.random()
-                        if prob > 0.995:
+                        if prob > 0.95:
                             q_erase = True
 
                     else:

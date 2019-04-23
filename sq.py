@@ -148,7 +148,7 @@ def main():
                         help="local_rank for distributed training on gpus")
     parser.add_argument('--seed',
                         type=int,
-                        default=42,
+                        default=32,
                         help="random seed for initialization")
     parser.add_argument('--gradient_accumulation_steps',
                         type=int,
@@ -293,7 +293,13 @@ def main():
         # corpus_path, tokenizer, seq_len, encoding="utf-8", corpus_lines=None,  rebuild=True
         #         , short_factor = 1, distribute_context_over = 1, fake_context=0, out_doc_mult = 1
 
-        num_train_optimization_steps = int(
+        # num_train_optimization_steps = int(
+        #     len(train_dataset) / args.train_batch_size / args.gradient_accumulation_steps) * args.num_train_epochs
+        if args.task == "wikitext":
+            num_train_optimization_steps=int(len(train_dataset) / args.max_seq_length / args.gradient_accumulation_steps * args.num_train_epochs)
+
+        else:
+            num_train_optimization_steps = int(
             len(train_dataset) / args.train_batch_size / args.gradient_accumulation_steps) * args.num_train_epochs
         if args.local_rank != -1:
             num_train_optimization_steps = num_train_optimization_steps // torch.distributed.get_world_size()

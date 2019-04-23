@@ -799,8 +799,13 @@ def main():
                                 reset_memory = True
                                 erase_memory = True
                             else:
-                                reset_memory = False
-                                erase_memory = False
+                                # only because we have a timestep reset bug
+                                if step % args.reset_step == 0:
+                                    reset_memory = True
+                                    erase_memory = False
+                                else:
+                                    reset_memory = False
+                                    erase_memory = False
                             input_ids, input_mask, segment_ids, lm_label_ids  = question_example
                             loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=reset_memory, erase_memory=erase_memory)
 

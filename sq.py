@@ -805,7 +805,7 @@ def main():
                             loss, predictions = model(input_ids, segment_ids, input_mask, lm_label_ids, reset_memory=reset_memory, erase_memory=erase_memory)
 
 
-
+                            import pdb; pdb.set_trace()
 
 
                             if n_gpu > 1:

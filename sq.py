@@ -21,7 +21,7 @@ from tqdm import tqdm, trange
 
 #from lambadatest import LambadaTest
 
-from modeling import BertForMaskedLM, BertConfig, BertForMaskedLMUt, UTafterBert, TDNCafterBert
+from modeling import BertForMaskedLM, BertConfig, BertForMaskedLMUt, UTafterBert, TDNCafterBert, MemoryBert
 from tokenization import BertTokenizer
 from optimization import BertAdam, warmup_linear
 
@@ -278,6 +278,10 @@ def main():
                             max_comp_length = args.max_comp_length, memory_size = args.memory_size, direct_write =args.direct_write, 
                             read_gate=args.read_gate, read_token_type=args.read_token_type, calc_with_read=args.calc_with_read, hidden_dropout_prob = args.dropout, use_ut = args.use_ut)
 
+    if args.model_type == "MemoryBert":
+        config2 = BertConfig(30522, mask_token_number=mask_token_number, 
+                            max_comp_length = args.max_comp_length, memory_size = args.memory_size, direct_write =args.direct_write, 
+                            read_gate=args.read_gate, read_token_type=args.read_token_type, calc_with_read=args.calc_with_read, hidden_dropout_prob = args.dropout, use_ut = args.use_ut)
     # to test without ut embeddings: , use_mask_embeddings=False, use_temporal_embeddings=False
     
 
@@ -333,13 +337,25 @@ def main():
             model = TDNCafterBert(config, config2)
         if args.model_type == "UTafterBertPretrained":
             model = UTafterBert(config, config2)
+        if args.model_type == "MemoryBert":
+            model = MemoryBert(config2)
 
+        # print("berts items:   ")
+        # for x in bert_state_dict:
+        #     print(x)
+
+        # print("Memory berts items")
+        # for x in model.state_dict():
+        #     print(x)
+        # import pdb; pdb.set_trace()
         # state = model.cls.state_dict()
         # for name in state:
         #     print(name)
         #     print(state[name])
-
+        print("trying to load bert model weights")
         load_weights_from_state(model.bert, bert_state_dict)
+        
+        print("trying to load cls weights")
         load_weights_from_state(model.cls , cls_state_dict)
 
         if not os.path.exists(_MODELS):
@@ -409,7 +425,11 @@ def main():
         for param in model.bert.parameters():
             param.requires_grad = False
 
-    
+    if args.model_type == "MemoryBert":
+
+        model = MemoryBert(config2)
+        model.load_state_dict(torch.load(_MODELS / "UTafterBertPretrained.pt"))
+        model.train()
 
     if args.load_model != "":
         print("Load model saved model")
@@ -462,6 +482,7 @@ def main():
 
 
 
+
     if args.fp16:
         model.half()
     model.to(device)
@@ -475,18 +496,34 @@ def main():
     #     model = torch.nn.DataParallel(model)
 
     # Prepare optimizer
-    if args.model_type == "UTafterBertPretrained" or "TDNCafterBertPretrained":
+
+    if args.model_type == "UTafterBertPretrained" or args.model_type == "TDNCafterBertPretrained":
         param_optimizer = list(model.ut.named_parameters())
         print("updating only ut part")
+
         if args.cls_train:
             param_optimizer.extend(list(model.cls.named_parameters()))
             "updating also cls part"
+    elif args.model_type == "MemoryBert":
+        #import pdb; pdb.set_trace()
+        
+        param_optimizer = []
+        for namep, valuep in model.named_parameters():
+            if valuep.requires_grad:
+                if "memory" in namep or "hidden_gate" in namep:
+                    param_optimizer.append((namep,valuep))
+                else:
+                    pass
 
+        #param_optimizer = filter(lambda p: p.requires_grad, model.named_parameters())
+        # param_optimizer = list(model.named_parameters())
+        print("updating only DNC part")
     else:
         param_optimizer = list(model.named_parameters())
         print("updating all parameters")
 
     if args.train_full:
+        model.train()
         for param in model.bert.parameters():
             param.requires_grad = True
         for param in model.parameters():
@@ -583,9 +620,12 @@ def main():
 
             if args.train_full:
                 model.train()
-                model.bert.train()
-                model.ut.train()
-                model.cls.train()
+                try:
+                    model.bert.train()
+                    model.ut.train()
+                    model.cls.train()
+                except:
+                    pass
 
 
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
@@ -605,6 +645,11 @@ def main():
                     context_example_list, question_example = train_dataset.get_batch()
 
 
+ 
+
+                # for name, param in model.named_parameters():
+                #     if param.requires_grad:
+                #         print(name)
 
                 question_example = tuple(t.to(device) for t in question_example)
                 context_example_list = [tuple(t.to(device) for t in context_example) for context_example in context_example_list]

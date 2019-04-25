@@ -61,7 +61,7 @@ class SparseMemory(nn.Module):
       read_strength = True,
       calc_with_read = False,
       dropout = 0. ,
-      positional_embeddings = True
+      positional_embeddings = False
       #x added direct write, independent false
   ):
     super(SparseMemory, self).__init__()
@@ -650,8 +650,7 @@ class SparseMemory(nn.Module):
 
 
     ξ = self.layernorm(ξ)
-    if self.read_strength and self.read_gate and self.calc_with_read:
-      ξ = self.dropout(ξ)
+
     # r read keys (b * r * w)
     read_query = ξ[:, :, :r * w].contiguous().view(b, s, r, w)
     # write key (b * 1 * w)
@@ -660,6 +659,8 @@ class SparseMemory(nn.Module):
     
     #x changed order to first read then write
     read_vectors, hidden = self.read(read_query, hidden, attention_mask)
+
+    read_vectors = self.dropout(read_vectors)
 
     if self.calc_with_read:
       ξ = self.second_interface_weights(T.cat([e, read_vectors], 2))

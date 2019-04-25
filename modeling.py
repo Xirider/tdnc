@@ -836,8 +836,10 @@ class BertEncoderDNCnoUT(nn.Module):
             self.layer = BertLayerDNC(config)
         elif config.read_token_type == "add":
             self.layer = BertLayerAddDNC(config, scale_original_tokens=False)
+            print("use add")
         elif config.read_token_type == "add_scale":
             self.layer = BertLayerAddDNC(config, scale_original_tokens=True)
+            print("use add_scale")
         #print(config.read_token_type)
         self.use_temporal_embeddings = True
         assert config.use_temporal_embeddings == True
@@ -1529,6 +1531,125 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
 
 
 
+class BertModelDNCwith(BertPreTrainedModel):
+    """BERT model ("Bidirectional Embedding Representations from a Transformer").
+
+    Params:
+        config: a BertConfig class instance with the configuration to build a new model
+
+    Inputs:
+        `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
+            with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
+            `extract_features.py`, `run_classifier.py` and `run_squad.py`)
+        `token_type_ids`: an optional torch.LongTensor of shape [batch_size, sequence_length] with the token
+            types indices selected in [0, 1]. Type 0 corresponds to a `sentence A` and type 1 corresponds to
+            a `sentence B` token (see BERT paper for more details).
+        `attention_mask`: an optional torch.LongTensor of shape [batch_size, sequence_length] with indices
+            selected in [0, 1]. It's a mask to be used if the input sequence length is smaller than the max
+            input sequence length in the current batch. It's the mask that we typically use for attention when
+            a batch has varying length sentences.
+        `output_all_encoded_layers`: boolean which controls the content of the `encoded_layers` output as described below. Default: `True`.
+
+    Outputs: Tuple of (encoded_layers, pooled_output)
+        `encoded_layers`: controled by `output_all_encoded_layers` argument:
+            - `output_all_encoded_layers=True`: outputs a list of the full sequences of encoded-hidden-states at the end
+                of each attention block (i.e. 12 full sequences for BERT-base, 24 for BERT-large), each
+                encoded-hidden-state is a torch.FloatTensor of size [batch_size, sequence_length, hidden_size],
+            - `output_all_encoded_layers=False`: outputs only the full sequence of hidden-states corresponding
+                to the last attention block of shape [batch_size, sequence_length, hidden_size],
+        `pooled_output`: a torch.FloatTensor of size [batch_size, hidden_size] which is the output of a
+            classifier pretrained on top of the hidden state associated to the first character of the
+            input (`CLS`) to train on the Next-Sentence task (see BERT's paper).
+
+    Example usage:
+    ```python
+    # Already been converted into WordPiece token ids
+    input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
+    input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
+    token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
+
+    config = modeling.BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
+        num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
+
+    model = modeling.BertModel(config=config)
+    all_encoder_layers, pooled_output = model(input_ids, token_type_ids, input_mask)
+    ```
+    """
+    def __init__(self, config):
+        super(BertModelDNCwith, self).__init__(config)
+
+        self.embeddings = BertEmbeddings(config)
+
+        if config.use_mask_embeddings:
+            
+            self.dropout3 = nn.Dropout(config.hidden_dropout_prob)
+            self.mask_token_number = config.mask_token_number
+            self.use_mask_embeddings = True
+            self.mask_positions = False
+            self.create_masks = True
+            self.hidden_size = config.hidden_size
+        else:
+            self.use_mask_embeddings = False
+        
+        self.encode_decode_embeddings = nn.Embedding(2, config.hidden_size)
+
+
+        self.encoder = BertEncoderDNCnoUT(config)
+        print("Without UT")
+        self.apply(self.init_bert_weights)
+        #nn.init.orthogonal_(self.encoder.layer.memory.interface_weights.weight)
+
+
+
+    def forward(self,  input_ids, token_type_ids=None, attention_mask=None,
+                reset_memory=False, erase_memory=False, output_all_encoded_layers=True):
+
+
+        # size of non padded input for each batch
+        input_number = torch.sum(attention_mask, dim=1)
+        # max length after padding
+        total_tokens = attention_mask.size(1)
+        # We create a 3D attention mask from a 2D tensor mask.
+        # Sizes are [batch_size, 1, 1, to_seq_length]
+        # So we can broadcast to [batch_size, num_heads, from_seq_length, to_seq_length]
+        # this attention mask is more simple than the triangular masking of causal attention
+        # used in OpenAI GPT, we just need to prepare the broadcast dimension here.
+        
+
+        # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
+        # masked positions, this operation will create a tensor which is 0.0 for
+        # positions we want to attend and -10000.0 for masked positions.
+        # Since we are adding it to the raw scores before the softmax, this is
+        # effectively the same as removing these entirely.
+
+        #extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
+
+        if self.create_masks:
+            self.mask_positions = torch.eq(input_ids, self.mask_token_number)
+
+        batch_no_mask = torch.eq(self.mask_positions.sum(1), 0).type(torch.long)
+
+        encode_decode_embeddings = self.encode_decode_embeddings(batch_no_mask).unsqueeze(1).expand(batch_no_mask.size(0),input_ids.size(1), self.hidden_size)
+        encode_decode_embeddings = self.dropout3(encode_decode_embeddings)
+
+
+        
+        embedding_output = self.embeddings(input_ids, token_type_ids)
+
+        input_tokens = embedding_output + encode_decode_embeddings
+
+
+        encoded_layers = self.encoder(input_tokens, attention_mask,
+                                      input_number = input_number, total_tokens=total_tokens, 
+                                      mask_positions=self.mask_positions, reset_memory=reset_memory, 
+                                      erase_memory= erase_memory, output_all_encoded_layers=output_all_encoded_layers)
+        sequence_output = encoded_layers[-1]
+        if not output_all_encoded_layers:
+            encoded_layers = encoded_layers[-1]
+        return encoded_layers
+
+
+
 class BertForPreTraining(BertPreTrainedModel):
     """BERT model with pre-training heads.
     This module comprises the BERT model followed by the two pre-training heads:
@@ -1818,6 +1939,10 @@ class UTafterBert(BertPreTrainedModel):
         else:
             return prediction_scores
 
+
+
+
+
 class TDNCafterBert(BertPreTrainedModel):
     """BERT model with UT Transformer aftwards
   
@@ -1846,3 +1971,28 @@ class TDNCafterBert(BertPreTrainedModel):
         else:
             return prediction_scores
 
+class MemoryBert(BertPreTrainedModel):
+    """BERT model with UT Transformer aftwards
+  
+    """
+    def __init__(self, config_ut):
+        super(MemoryBert, self).__init__(config_ut)
+        self.bert = BertModelDNCwith(config_ut)
+        self.cls = BertOnlyMLMHead(config_ut, self.bert.embeddings.word_embeddings.weight)
+        self.apply(self.init_bert_weights)
+        #nn.init.orthogonal_(self.ut.encoder.layer.memory.interface_weights.weight)
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None, reset_memory =False, erase_memory=False):
+        bert_tokens = self.bert(input_ids, token_type_ids, attention_mask, reset_memory=reset_memory, erase_memory= erase_memory,
+                                       output_all_encoded_layers=False)
+        
+        
+        prediction_scores = self.cls(bert_tokens)
+
+        if masked_lm_labels is not None:
+            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
+            #x modified to also return scores
+            return masked_lm_loss, prediction_scores
+        else:
+            return prediction_scores

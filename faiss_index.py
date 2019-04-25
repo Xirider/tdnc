@@ -23,7 +23,7 @@ class FAISSIndex(object):
 
     # BEWARE: if this variable gets deallocated, FAISS crashes
     self.res = res if res else faiss.StandardGpuResources()
-    self.res.setTempMemoryFraction(0.005)
+    self.res.setTempMemoryFraction(0.1)
     if self.gpu_id != -1:
       self.res.initializeForDevice(self.gpu_id)
 

@@ -617,7 +617,8 @@ def main():
 
                 if args.cls_train:
                     model.cls.train()
-
+            if args.model_type == "MemoryBert":
+                model.train()
             if args.train_full:
                 model.train()
                 try:

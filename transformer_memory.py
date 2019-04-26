@@ -66,6 +66,7 @@ class SparseMemory(nn.Module):
   ):
     super(SparseMemory, self).__init__()
 
+    self.res = None
     self.mem_size = mem_size
     self.cell_size = cell_size
     self.gpu_id = gpu_id
@@ -181,7 +182,7 @@ class SparseMemory(nn.Module):
         hidden["indexes"] = \
             [FAISSIndex(cell_size=self.cell_size,
                         nr_cells=self.mem_size, K=self.K, num_lists=self.num_lists,
-                        probes=self.index_checks, gpu_id=self.mem_gpu_id) for x in range(b)]
+                        probes=self.index_checks, gpu_id=self.mem_gpu_id, res=self.res) for x in range(b)]
       except Exception as e:
         print("\nFalling back to FLANN (CPU). \nFor using faster, GPU based indexes, install FAISS: `conda install faiss-gpu -c pytorch`")
         from flann_index import FLANNIndex

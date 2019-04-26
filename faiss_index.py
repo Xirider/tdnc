@@ -22,10 +22,19 @@ class FAISSIndex(object):
     self.gpu_id = gpu_id
 
     # BEWARE: if this variable gets deallocated, FAISS crashes
-    self.res = res if res else faiss.StandardGpuResources()
-    self.res.setTempMemoryFraction(0.01)
-    if self.gpu_id != -1:
-      self.res.initializeForDevice(self.gpu_id)
+    if res:
+      self.res = res
+      print("common res object used")
+    else:
+      self.res = faiss.StandardGpuResources()
+      self.res.setTempMemoryFraction(0.01)
+      if self.gpu_id != -1:
+        self.res.initializeForDevice(self.gpu_id)
+    # self.res = res if res else faiss.StandardGpuResources()
+    # self.res.setTempMemoryFraction(0.01)
+    # if self.gpu_id != -1:
+    #   if res == None:
+    #     self.res.initializeForDevice(self.gpu_id)
 
     #nr_samples = self.nr_cells * 100 * self.cell_size
     #train = train if train is not None else T.randn(self.nr_cells * 100, self.cell_size)

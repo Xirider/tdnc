@@ -633,6 +633,18 @@ class BertLayerAddDNC(nn.Module):
         self.memory = SparseMemory(input_size= config.hidden_size, mem_size=config.memory_size, cell_size=config.hidden_size,
          independent_linears=False, read_heads=1, sparse_reads=4, num_lists=None, index_checks=None, 
          gpu_id=self.gpu_id, mem_gpu_id=self.gpu_id, direct_write=config.direct_write, read_gate=config.read_gate)
+        
+        try:
+            import faiss
+            self.res = faiss.StandardGpuResources()
+            self.res.setTempMemoryFraction(0.02)
+            self.res.initializeForDevice(self.gpu_id)
+            self.memory.res = self.res
+            print("using the same ressources for each batch")
+        except:
+            pass
+
+
 
         self.attention = BertAttentionUt(config)
         self.intermediate = BertIntermediate(config)

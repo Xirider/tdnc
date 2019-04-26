@@ -853,10 +853,9 @@ class BertEncoderDNCnoUT(nn.Module):
         self.layer = nn.ModuleList([copy.deepcopy(self.layer) for _ in range(config.num_hidden_layers)])
 
         try:
-            import pdb; pdb.set_trace()
             import faiss
             self.res = faiss.StandardGpuResources()
-            self.res.setTempMemoryFraction(0.02)
+            self.res.setTempMemoryFraction(0.05)
             self.res.initializeForDevice(0)
             print("using the same ressources for each batch")
         except:

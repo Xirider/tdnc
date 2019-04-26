@@ -855,7 +855,7 @@ class BertEncoderDNCnoUT(nn.Module):
         try:
             import faiss
             self.res = faiss.StandardGpuResources()
-            self.res.setTempMemoryFraction(0.05)
+            self.res.setTempMemoryFraction(0.02)
             self.res.initializeForDevice(0)
             print("using the same ressources for each batch")
         except:

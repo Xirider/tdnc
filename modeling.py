@@ -634,15 +634,7 @@ class BertLayerAddDNC(nn.Module):
          independent_linears=False, read_heads=1, sparse_reads=4, num_lists=None, index_checks=None, 
          gpu_id=self.gpu_id, mem_gpu_id=self.gpu_id, direct_write=config.direct_write, read_gate=config.read_gate)
         
-        try:
-            import faiss
-            self.res = faiss.StandardGpuResources()
-            self.res.setTempMemoryFraction(0.02)
-            self.res.initializeForDevice(self.gpu_id)
-            self.memory.res = self.res
-            print("using the same ressources for each batch")
-        except:
-            pass
+
 
 
 
@@ -859,6 +851,18 @@ class BertEncoderDNCnoUT(nn.Module):
         self.hidden_layer_number = config.num_hidden_layers
 
         self.layer = nn.ModuleList([copy.deepcopy(self.layer) for _ in range(config.num_hidden_layers)])
+
+        try:
+            import faiss
+            self.res = faiss.StandardGpuResources()
+            self.res.setTempMemoryFraction(0.02)
+            self.res.initializeForDevice(self.gpu_id)
+            print("using the same ressources for each batch")
+        except:
+            print("using different ressources each batch, as faiss couldnt be loaded")
+            self.res = None
+        for l in self.layer:
+            l.memory.res = self.res
 
 
 

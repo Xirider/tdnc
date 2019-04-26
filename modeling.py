@@ -1484,6 +1484,8 @@ class BertModelDNCNoEmbedding(BertPreTrainedModel):
         else:
             self.encoder = BertEncoderDNCnoUT(config)
         self.apply(self.init_bert_weights)
+
+
         #nn.init.orthogonal_(self.encoder.layer.memory.interface_weights.weight)
 
 
@@ -1969,6 +1971,7 @@ class TDNCafterBert(BertPreTrainedModel):
         self.ut = BertModelDNCNoEmbedding(config_ut)
         self.cls = BertOnlyMLMHead(config, self.bert.embeddings.word_embeddings.weight)
         self.apply(self.init_bert_weights)
+        
         #nn.init.orthogonal_(self.ut.encoder.layer.memory.interface_weights.weight)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None, reset_memory =False, erase_memory=False):
@@ -1996,6 +1999,10 @@ class MemoryBert(BertPreTrainedModel):
         self.bert = BertModelDNCwith(config_ut)
         self.cls = BertOnlyMLMHead(config_ut, self.bert.embeddings.word_embeddings.weight)
         self.apply(self.init_bert_weights)
+        if config_ut.read_token_type == "add_scale":
+            for layer in self.bert.encoder.layer:
+                layer.hidden_gate.bias.data.fill_(1.0)
+
         #nn.init.orthogonal_(self.ut.encoder.layer.memory.interface_weights.weight)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None, reset_memory =False, erase_memory=False):
